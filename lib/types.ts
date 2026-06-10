@@ -27,6 +27,13 @@ export interface DraftFormatMeta {
   [key: string]: unknown;
 }
 
+export interface GeneratedIdea {
+  title: string;
+  angle: string;
+  pillar: Pillar;
+  format: string;
+}
+
 export interface ExpandedBrief {
   angle: string;
   audience: string;

@@ -1,8 +1,25 @@
 import "server-only";
 import { promises as fs } from "fs";
 import path from "path";
-import type { BrandSettings, CarouselSlide, ExpandedBrief, Idea, Platform } from "./types";
+import type {
+  BrandSettings,
+  CarouselSlide,
+  ExpandedBrief,
+  GeneratedIdea,
+  Idea,
+  Pillar,
+  Platform,
+} from "./types";
 import { platformMeta } from "./types";
+
+const PILLAR_VALUES = [
+  "code_craft",
+  "ai_practice",
+  "code_x_ai",
+  "simulations",
+  "build_in_public",
+  "dev_education",
+] as const;
 
 const KEY = process.env.OPENAI_API_KEY;
 const BASE = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/+$/, "");
@@ -543,6 +560,68 @@ and the best format to answer it. Frame it as helpful, never defensive.
   } catch {
     return { title: `Answer: ${comment.slice(0, 60)}`, body: comment };
   }
+}
+
+// ── Idea generation (the "idea creator") ─────────────────────────────────────
+export async function generateIdeas(opts: {
+  pillar?: string;
+  topic?: string;
+  count?: number;
+  avoidTitles?: string[];
+  brand?: BrandSettings;
+}): Promise<GeneratedIdea[]> {
+  const count = Math.min(Math.max(opts.count ?? 6, 1), 12);
+  if (!aiEnabled) return fallbackIdeas(opts.pillar, count);
+
+  const prompt = `Generate ${count} fresh, specific content ideas for the <danfordchris/> brand.
+${opts.pillar ? `Focus on the "${opts.pillar}" pillar.` : "Vary the ideas across the brand pillars."}
+${opts.topic ? `Theme/seed to riff on: ${opts.topic}.` : ""}
+${opts.avoidTitles?.length ? `Do NOT repeat or closely overlap these existing ideas: ${opts.avoidTitles.slice(0, 40).join("; ")}.` : ""}
+Pillars: code_craft, ai_practice, code_x_ai, simulations, build_in_public, dev_education.
+Each idea must be a CONCRETE, scroll-stopping post title (a real post, not a topic category),
+a one-line angle/hook explaining what makes it interesting, the best pillar, and the best
+format (one of: linkedin, x, youtube_short, video_script, blog, carousel).
+Make them practical, developer-focused, varied, and genuinely useful.
+Return STRICT JSON: {"ideas":[{"title":"...","angle":"...","pillar":"...","format":"..."}]}`;
+
+  try {
+    const parsed = parseJson(await chat(prompt, true, buildSystem(opts.brand)));
+    const arr = Array.isArray(parsed.ideas) ? parsed.ideas : [];
+    return arr
+      .map((x: any) => ({
+        title: String(x.title ?? "").slice(0, 200),
+        angle: String(x.angle ?? ""),
+        pillar: (PILLAR_VALUES as readonly string[]).includes(x.pillar)
+          ? (x.pillar as Pillar)
+          : ((PILLAR_VALUES as readonly string[]).includes(opts.pillar ?? "")
+              ? (opts.pillar as Pillar)
+              : "code_x_ai"),
+        format: String(x.format ?? "linkedin"),
+      }))
+      .filter((x: GeneratedIdea) => x.title.length > 2)
+      .slice(0, count);
+  } catch {
+    return fallbackIdeas(opts.pillar, count);
+  }
+}
+
+function fallbackIdeas(pillar: string | undefined, count: number): GeneratedIdea[] {
+  const pool: GeneratedIdea[] = [
+    { title: "Why your AI app is slow: you're not batching embeddings", angle: "A 40× speedup from one change, with before/after numbers.", pillar: "ai_practice", format: "carousel" },
+    { title: "RAG is just search with a reranker", angle: "Demystify RAG with a 30-line demo instead of buzzwords.", pillar: "ai_practice", format: "blog" },
+    { title: "Server Actions vs API routes — when each wins", angle: "A decision guide with real trade-offs.", pillar: "code_craft", format: "linkedin" },
+    { title: "I simulated a traffic jam to understand backpressure", angle: "A tiny simulation that taught me about API load.", pillar: "simulations", format: "video_script" },
+    { title: "Function calling, explained by building a weather agent", angle: "From zero to a working tool-using agent.", pillar: "code_x_ai", format: "blog" },
+    { title: "The git command that saved my week", angle: "A 40-second tip most devs don't know.", pillar: "dev_education", format: "youtube_short" },
+    { title: "Building Content Lab in public — week 1", angle: "What shipped, what broke, the numbers.", pillar: "build_in_public", format: "linkedin" },
+    { title: "pgvector: semantic search inside plain Postgres", angle: "No extra service — just SQL.", pillar: "code_x_ai", format: "carousel" },
+    { title: "How I stopped running out of content ideas", angle: "The system (this app) that recycles ideas forever.", pillar: "build_in_public", format: "x" },
+    { title: "Boids: flocking behavior from 3 simple rules", angle: "Emergent complexity from tiny rules.", pillar: "simulations", format: "video_script" },
+    { title: "Prompt injection, shown with a real broken app", angle: "Make the risk concrete, then fix it.", pillar: "ai_practice", format: "blog" },
+    { title: "Stop console.logging — try this instead", angle: "A faster debugging workflow.", pillar: "dev_education", format: "youtube_short" },
+  ];
+  const filtered = pillar ? pool.filter((i) => i.pillar === pillar) : pool;
+  return (filtered.length ? filtered : pool).slice(0, count);
 }
 
 // ── Platform rules ───────────────────────────────────────────────────────────

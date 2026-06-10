@@ -62,11 +62,16 @@ export default async function Dashboard() {
           </Link>
         </div>
         {ideas.length === 0 ? (
-          <div className="card p-10 text-center">
-            <div className="text-zinc-500 text-base mb-1">No ideas yet</div>
-            <p className="text-sm text-zinc-600">
-              Drop your first spark above, or press <span className="kbd">⌘K</span> anywhere.
-            </p>
+          <div className="card p-10 text-center flex flex-col items-center gap-3">
+            <div>
+              <div className="text-zinc-400 text-base mb-1">No ideas yet</div>
+              <p className="text-sm text-zinc-600">
+                Drop a spark above, press <span className="kbd">⌘K</span>, or let AI generate a batch.
+              </p>
+            </div>
+            <Link href="/ideas/generate" className="btn btn-primary text-sm">
+              ✦ Generate ideas
+            </Link>
           </div>
         ) : (
           <div className="flex flex-col gap-2">

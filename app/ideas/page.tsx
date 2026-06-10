@@ -28,9 +28,14 @@ export default async function IdeasPage({
 
   return (
     <div className="flex flex-col gap-5">
-      <header>
-        <h1 className="text-2xl font-semibold">Idea Vault</h1>
-        <p className="text-sm text-zinc-500">Every spark, never lost.</p>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Idea Vault</h1>
+          <p className="text-sm text-zinc-500">Every spark, never lost.</p>
+        </div>
+        <Link href="/ideas/generate" className="btn btn-primary text-sm shrink-0">
+          ✦ Generate ideas
+        </Link>
       </header>
 
       <QuickCapture />

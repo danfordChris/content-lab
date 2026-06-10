@@ -9,10 +9,12 @@ import {
   generateImage,
   generateVisual,
   renderSlideCard,
+  generateIdeas,
 } from "@/lib/ai";
 import { effectiveBrand } from "@/lib/types";
 import type {
   BrandSettings,
+  GeneratedIdea,
   Draft,
   Idea,
   IdeaStatus,
@@ -269,6 +271,46 @@ export async function commentToIdeaAction(comment: string): Promise<Idea> {
   const idea = await createIdea({ title, body });
   await updateIdea(idea.id, { sourceComment: text });
   return idea;
+}
+
+// ── Idea creator ─────────────────────────────────────────────────────────────
+export async function generateIdeasAction(opts: {
+  pillar?: string;
+  topic?: string;
+  count?: number;
+}): Promise<GeneratedIdea[]> {
+  const db = await readDB();
+  return generateIdeas({
+    pillar: opts.pillar,
+    topic: opts.topic,
+    count: opts.count,
+    avoidTitles: db.ideas.map((i) => i.title),
+    brand: effectiveBrand(db.settings),
+  });
+}
+
+/** Save chosen generated ideas into the vault. Returns how many were created. */
+export async function saveIdeasAction(
+  items: { title: string; body?: string; pillar?: Pillar }[]
+): Promise<number> {
+  const valid = items.filter((i) => i.title?.trim().length >= 2);
+  if (!valid.length) return 0;
+  await mutate((db) => {
+    for (const it of valid) {
+      db.ideas.unshift({
+        id: uid(),
+        title: it.title.trim(),
+        body: it.body?.trim() || undefined,
+        pillar: it.pillar,
+        status: "spark",
+        createdAt: now(),
+        updatedAt: now(),
+      });
+    }
+  });
+  revalidatePath("/ideas");
+  revalidatePath("/");
+  return valid.length;
 }
 
 // ── Brand settings ───────────────────────────────────────────────────────────

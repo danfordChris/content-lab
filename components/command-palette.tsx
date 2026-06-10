@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { createIdea } from "@/app/actions";
 
 const NAV = [
+  { href: "/ideas/generate", label: "Generate ideas with AI" },
   { href: "/", label: "Go to Dashboard" },
   { href: "/ideas", label: "Go to Idea Vault" },
   { href: "/drafts", label: "Go to Drafts" },
