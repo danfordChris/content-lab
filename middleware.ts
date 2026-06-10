@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth", "/generated", "/_next", "/favicon"];
+const PUBLIC_PREFIXES = ["/login", "/api/auth", "/__/", "/generated", "/_next", "/favicon"];
 
 export function middleware(req: NextRequest) {
   // Auth only applies when Firebase is configured; otherwise it's local mode.
