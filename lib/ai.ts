@@ -229,9 +229,23 @@ Style: ${aesthetic}. ${bg}. Colors: ${colors}. ${font}. ${mood}.${extra}${avoid}
 Square composition suitable for a social media slide.`;
 }
 
+function contentTypeFor(ext: string): string {
+  return ext === "svg" ? "image/svg+xml" : ext === "png" ? "image/png" : "image/jpeg";
+}
+
 async function saveImage(bytes: Buffer, ext: string): Promise<string> {
-  await fs.mkdir(IMG_DIR, { recursive: true });
   const name = `${randomId()}.${ext}`;
+  // On Vercel (read-only FS) use Vercel Blob; locally write to public/generated.
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const { put } = await import("@vercel/blob");
+    const { url } = await put(`generated/${name}`, bytes, {
+      access: "public",
+      contentType: contentTypeFor(ext),
+      addRandomSuffix: false,
+    });
+    return url;
+  }
+  await fs.mkdir(IMG_DIR, { recursive: true });
   await fs.writeFile(path.join(IMG_DIR, name), bytes);
   return `/generated/${name}`;
 }

@@ -15,3 +15,5 @@ public/generated
 *firebase-adminsdk*.json
 .firebase/
 firebase-debug.log
+.vercel
+.env*
