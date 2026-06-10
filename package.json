@@ -1,0 +1,32 @@
+{
+  "name": "danfordchris-content-lab",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node ./node_modules/next/dist/bin/next dev",
+    "build": "node ./node_modules/next/dist/bin/next build",
+    "start": "node ./node_modules/next/dist/bin/next start",
+    "lint": "node ./node_modules/next/dist/bin/next lint",
+    "firebase:configure": "node scripts/setup-firebase.mjs",
+    "firebase:login": "npx -y firebase-tools@latest login",
+    "firebase:emulators": "npx -y firebase-tools@latest emulators:start",
+    "firebase:rules": "npx -y firebase-tools@latest deploy --only firestore:rules"
+  },
+  "dependencies": {
+    "firebase": "^11.3.0",
+    "firebase-admin": "^13.1.0",
+    "jszip": "^3.10.1",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}

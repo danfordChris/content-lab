@@ -1,0 +1,17 @@
+node_modules
+.next
+.data
+.env
+.env.local
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+
+# generated images
+public/generated
+
+# firebase secrets / cache
+*serviceAccount*.json
+*firebase-adminsdk*.json
+.firebase/
+firebase-debug.log
