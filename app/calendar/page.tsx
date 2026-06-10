@@ -36,7 +36,7 @@ export default async function CalendarPage() {
           <p className="text-base mb-1">Nothing scheduled.</p>
           <p className="text-sm">
             Open a draft and hit <span className="text-zinc-300">Schedule</span>.{" "}
-            <Link href="/drafts" className="text-emerald-400 hover:underline">
+            <Link href="/drafts" className="text-[var(--accent)] hover:underline">
               Go to drafts →
             </Link>
           </p>

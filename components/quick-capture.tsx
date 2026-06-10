@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { createIdea } from "@/app/actions";
 import { PILLARS, type Pillar } from "@/lib/types";
 
@@ -29,9 +30,11 @@ export function QuickCapture({ autoFocus = false }: { autoFocus?: boolean }) {
     start(async () => {
       try {
         await createIdea(payload);
+        toast.success("Idea captured");
         router.refresh();
       } catch {
         setErr("Couldn't save — try again.");
+        toast.error("Couldn't save idea");
         setTitle(payload.title);
         setBody(payload.body ?? "");
       }

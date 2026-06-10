@@ -19,7 +19,7 @@ export default async function DraftsPage() {
         <div className="card p-10 text-center text-zinc-500">
           <p className="text-base mb-1">No drafts yet.</p>
           <p className="text-sm">
-            Open an idea and generate content. <Link href="/ideas" className="text-emerald-400 hover:underline">Go to the vault →</Link>
+            Open an idea and generate content. <Link href="/ideas" className="text-[var(--accent)] hover:underline">Go to the vault →</Link>
           </p>
         </div>
       ) : (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { saveSettings, previewBrandImageAction } from "@/app/actions";
 import { DEFAULT_BRAND, type BrandSettings, type ImageStyle } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export function SettingsForm({ initial }: { initial: BrandSettings }) {
     start(async () => {
       await saveSettings(b);
       setSaved(true);
+      toast.success("Brand settings saved");
     });
   }
   function doPreview() {

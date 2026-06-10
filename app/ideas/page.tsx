@@ -84,7 +84,11 @@ export default async function IdeasPage({
               <div className="flex flex-wrap items-center gap-2 mt-auto pt-1">
                 <PillarBadge pillar={i.pillar} />
                 <StatusBadge status={i.status} />
-                {i.brief && <span className="chip text-emerald-400 border-emerald-900">expanded</span>}
+                {i.brief && (
+                  <span className="chip" style={{ color: "var(--accent)", borderColor: "rgba(37,99,235,0.35)" }}>
+                    expanded
+                  </span>
+                )}
                 {draftCount(i.id) > 0 && (
                   <span className="chip text-zinc-400">{draftCount(i.id)} drafts</span>
                 )}

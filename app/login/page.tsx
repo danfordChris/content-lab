@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { getClientAuth } from "@/lib/firebase/client";
+import { Wordmark } from "@/components/wordmark";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,8 +34,10 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-[70vh] grid place-items-center">
-      <div className="card p-8 w-full max-w-sm flex flex-col gap-5 text-center">
-        <div className="mono text-xl font-semibold">&lt;danfordchris/&gt;</div>
+      <div className="card p-8 w-full max-w-sm flex flex-col gap-5 text-center" style={{ background: "var(--panel-2)" }}>
+        <div className="flex justify-center">
+          <Wordmark size={24} />
+        </div>
         <div>
           <h1 className="text-lg font-medium">Content Lab</h1>
           <p className="text-sm text-zinc-500 mt-1">Sign in to your content engine.</p>

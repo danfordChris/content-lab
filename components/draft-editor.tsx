@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   saveDraft,
   setDraftStatus,
@@ -27,6 +28,7 @@ export function DraftEditor({ draft }: { draft: Draft }) {
     const iso = new Date(when.replace(" ", "T")).toISOString();
     start(async () => {
       await scheduleDraft(draft.id, iso);
+      toast.success("Scheduled");
       router.push("/calendar");
     });
   }
@@ -53,7 +55,13 @@ export function DraftEditor({ draft }: { draft: Draft }) {
               </option>
             ))}
           </select>
-          <button onClick={() => navigator.clipboard.writeText(draft.content)} className="btn btn-ghost text-xs py-1.5">
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(draft.content);
+              toast.success("Copied to clipboard");
+            }}
+            className="btn btn-ghost text-xs py-1.5"
+          >
             Copy
           </button>
           <button
@@ -205,7 +213,8 @@ function CarouselEditor({ draft }: { draft: Draft }) {
 
   function generateAll() {
     startGen(async () => {
-      await generateAllSlidesAction(draft.id);
+      const r = await generateAllSlidesAction(draft.id);
+      toast.success(`Designed ${r.count} slide${r.count === 1 ? "" : "s"}`);
       router.refresh();
     });
   }
