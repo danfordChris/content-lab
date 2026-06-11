@@ -14,7 +14,14 @@ import {
 } from "@/app/actions";
 import { PlatformBadge, StatusBadge } from "@/components/badges";
 import { platformMeta, type Draft, type DraftStatus } from "@/lib/types";
-import { downloadText, downloadAsImage, svgUrlToPngBlob, slugify, extFor } from "@/lib/download";
+import {
+  downloadText,
+  downloadAsImage,
+  svgUrlToPngBlob,
+  blobToDataUrl,
+  slugify,
+  extFor,
+} from "@/lib/download";
 
 export function DraftEditor({ draft }: { draft: Draft }) {
   const router = useRouter();
@@ -224,9 +231,10 @@ function CarouselEditor({ draft }: { draft: Draft }) {
   async function downloadAll() {
     setZipping(true);
     try {
-      const JSZip = (await import("jszip")).default;
+      const [{ default: JSZip }, { jsPDF }] = await Promise.all([import("jszip"), import("jspdf")]);
       const zip = new JSZip();
       let captions = `${draft.title}\n\n`;
+      const pages: { dataUrl: string; type: "PNG" | "JPEG" }[] = [];
       for (let i = 0; i < slides.length; i++) {
         const s = slides[i];
         captions += `Slide ${i + 1}: ${s.text}\n\n`;
@@ -237,7 +245,23 @@ function CarouselEditor({ draft }: { draft: Draft }) {
             : await (await fetch(s.imageUrl)).blob();
           const ext = s.imageUrl.endsWith(".svg") ? "png" : s.imageUrl.split(".").pop() || "jpg";
           zip.file(`slide-${String(i + 1).padStart(2, "0")}.${ext}`, blob);
+          pages.push({ dataUrl: await blobToDataUrl(blob), type: ext === "png" ? "PNG" : "JPEG" });
         }
+      }
+      // Bundle the slides as a single in-order PDF — this is the exact file
+      // LinkedIn document-post carousels accept.
+      if (pages.length) {
+        const pdf = new jsPDF({
+          orientation: "portrait",
+          unit: "px",
+          format: [1080, 1080],
+          hotfixes: ["px_scaling"],
+        });
+        pages.forEach((p, i) => {
+          if (i > 0) pdf.addPage([1080, 1080], "portrait");
+          pdf.addImage(p.dataUrl, p.type, 0, 0, 1080, 1080);
+        });
+        zip.file(`${slugify(draft.title)}-carousel.pdf`, pdf.output("blob"));
       }
       zip.file("captions.txt", captions);
       const out = await zip.generateAsync({ type: "blob" });

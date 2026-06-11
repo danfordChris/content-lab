@@ -63,6 +63,15 @@ export async function downloadAsImage(url: string, baseName: string) {
   }
 }
 
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error("read failed"));
+    r.readAsDataURL(blob);
+  });
+}
+
 export function slugify(s: string): string {
   const out = (s || "content")
     .toLowerCase()

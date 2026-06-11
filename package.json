@@ -16,6 +16,7 @@
     "@vercel/blob": "^2.4.0",
     "firebase": "^11.3.0",
     "firebase-admin": "^13.1.0",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "next": "^15.1.6",
     "nodemailer": "^8.0.11",
