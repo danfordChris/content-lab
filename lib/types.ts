@@ -17,11 +17,14 @@ export type Platform =
   | "carousel";
 export type DraftStatus = "draft" | "ready" | "scheduled" | "posted" | "archived";
 
+export type SlideLayout = "cover" | "text" | "statement" | "stat" | "outro";
+
 export interface CarouselSlide {
   text: string;
   imagePrompt?: string;
   imageUrl?: string;
   isOutro?: boolean; // the final branded follow-me slide
+  layout?: SlideLayout; // editorial page type (mixed carousels)
 }
 
 export interface DraftFormatMeta {
@@ -108,6 +111,10 @@ export interface BrandSettings {
   socials?: { instagram?: string; tiktok?: string; x?: string };
   // where reminder emails go (defaults to the login email)
   notifyEmail?: string;
+  // identity shown in the carousel page header + outro
+  displayName?: string;
+  role?: string;
+  avatarUrl?: string; // photo for the footer circle; blank = monogram
 }
 
 export const DEFAULT_BRAND: BrandSettings = {
@@ -135,6 +142,8 @@ export const DEFAULT_BRAND: BrandSettings = {
     tiktok: "codewithdanfordchris",
     x: "codewithdanfordchris",
   },
+  displayName: "Danford Chris",
+  role: "Software Developer · AI Educator",
 };
 
 /** Merge saved settings over the brand defaults (so your brand applies even

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   expandIdeaAction,
   generateDraftsAction,
@@ -41,9 +42,16 @@ export function IdeaWorkspace({ idea, drafts }: { idea: Idea; drafts: Draft[] })
     if (picked.length === 0) return;
     setBusy("generate");
     start(async () => {
-      await generateDraftsAction(idea.id, picked);
-      setBusy(null);
-      router.refresh();
+      try {
+        const r = await generateDraftsAction(idea.id, picked);
+        if (r.created > 0) toast.success(`Generated ${r.created} draft${r.created === 1 ? "" : "s"}`);
+        for (const f of r.failures) toast.error(`${f.platform}: ${f.error}`);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Generation failed");
+      } finally {
+        setBusy(null);
+        router.refresh();
+      }
     });
   }
 

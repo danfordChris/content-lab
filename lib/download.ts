@@ -26,26 +26,29 @@ export async function downloadFile(filename: string, srcUrl: string) {
 
 /** Rasterize a (same-origin) SVG URL to a PNG Blob via canvas — so slides can be
  *  uploaded to LinkedIn/Instagram, which don't accept SVG. */
-export async function svgUrlToPngBlob(url: string, size = 1080): Promise<Blob> {
+export async function svgUrlToPngBlob(url: string): Promise<{ blob: Blob; w: number; h: number }> {
   const svgText = await (await fetch(url)).text();
+  const w = Number(/width="(\d+)"/.exec(svgText)?.[1] ?? 1080);
+  const h = Number(/height="(\d+)"/.exec(svgText)?.[1] ?? 1080);
   const objUrl = URL.createObjectURL(new Blob([svgText], { type: "image/svg+xml" }));
   try {
     const img = new Image();
-    img.width = size;
-    img.height = size;
+    img.width = w;
+    img.height = h;
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
       img.onerror = () => reject(new Error("svg load failed"));
       img.src = objUrl;
     });
     const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(img, 0, 0, size, size);
-    return await new Promise<Blob>((resolve, reject) =>
+    ctx.drawImage(img, 0, 0, w, h);
+    const blob = await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png")
     );
+    return { blob, w, h };
   } finally {
     URL.revokeObjectURL(objUrl);
   }
@@ -54,7 +57,7 @@ export async function svgUrlToPngBlob(url: string, size = 1080): Promise<Blob> {
 /** Download an image URL as PNG (rasterizing SVGs); for raster URLs, download as-is. */
 export async function downloadAsImage(url: string, baseName: string) {
   if (url.endsWith(".svg")) {
-    const blob = await svgUrlToPngBlob(url);
+    const { blob } = await svgUrlToPngBlob(url);
     const u = URL.createObjectURL(blob);
     triggerDownload(`${baseName}.png`, u);
     setTimeout(() => URL.revokeObjectURL(u), 1500);

@@ -17,6 +17,9 @@ export function SettingsForm({ initial }: { initial: BrandSettings }) {
     imageStyle: { ...(initial.imageStyle ?? {}) },
     socials: { ...(initial.socials ?? {}) },
     notifyEmail: initial.notifyEmail ?? "",
+    displayName: initial.displayName ?? "",
+    role: initial.role ?? "",
+    avatarUrl: initial.avatarUrl ?? "",
   });
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
@@ -136,6 +139,28 @@ export function SettingsForm({ initial }: { initial: BrandSettings }) {
             {note && <p className="text-xs text-zinc-500">{note}</p>}
           </div>
         )}
+      </section>
+
+      {/* Carousel identity */}
+      <section className="card p-5 flex flex-col gap-4">
+        <h2 className="text-sm font-medium text-zinc-300">Carousel identity</h2>
+        <p className="text-xs text-zinc-500 -mt-2">
+          Shown in the header of every carousel slide and on the closing page.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Field label="Display name">
+            <input className="input" value={b.displayName ?? ""} placeholder={D.displayName}
+              onChange={(e) => set("displayName", e.target.value)} />
+          </Field>
+          <Field label="Role / tagline">
+            <input className="input" value={b.role ?? ""} placeholder={D.role}
+              onChange={(e) => set("role", e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Avatar image URL" hint="square photo; blank = monogram circle">
+          <input className="input" value={b.avatarUrl ?? ""} placeholder="https://…/me.jpg"
+            onChange={(e) => set("avatarUrl", e.target.value)} />
+        </Field>
       </section>
 
       {/* Socials + notifications */}

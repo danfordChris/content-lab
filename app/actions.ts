@@ -10,8 +10,9 @@ import {
   generateVisual,
   renderSlideCard,
   generateIdeas,
+  friendlyAiError,
 } from "@/lib/ai";
-import { effectiveBrand } from "@/lib/types";
+import { effectiveBrand, platformMeta } from "@/lib/types";
 import { weekTemplate, postingTip, slotTimeISO, type WeekRow } from "@/lib/planner";
 import type {
   BrandSettings,
@@ -92,43 +93,55 @@ export async function expandIdeaAction(id: string): Promise<void> {
 }
 
 // ── Drafts ───────────────────────────────────────────────────────────────────
+export type DraftGenResult = {
+  created: number;
+  failures: { platform: string; error: string }[];
+};
+
 export async function generateDraftsAction(
   ideaId: string,
   platforms: Platform[]
-): Promise<string[]> {
+): Promise<DraftGenResult> {
   const db = await readDB();
   const idea = db.ideas.find((x) => x.id === ideaId);
   if (!idea) throw new Error("Idea not found");
+  const brand = effectiveBrand(db.settings);
 
-  const generated = await Promise.all(
-    platforms.map(async (p) => ({ platform: p, ...(await generateDraft(idea, p, effectiveBrand(db.settings))) }))
-  );
-
-  const ids = await mutate((d) => {
-    const created: string[] = [];
-    for (const g of generated) {
-      const draft: Draft = {
-        id: uid(),
-        ideaId,
-        platform: g.platform,
-        title: g.title,
-        content: g.content,
-        status: "draft",
-        formatMeta: g.formatMeta,
-        createdAt: now(),
-        updatedAt: now(),
-      };
-      d.drafts.unshift(draft);
-      created.push(draft.id);
+  // Sequential: keeps us under the AI rate limit and isolates per-platform failures.
+  const generated: { platform: Platform; title: string; content: string; formatMeta?: Draft["formatMeta"] }[] = [];
+  const failures: { platform: string; error: string }[] = [];
+  for (const p of platforms) {
+    try {
+      const g = await generateDraft(idea, p, brand);
+      generated.push({ platform: p, ...g });
+    } catch (e) {
+      failures.push({ platform: platformMeta(p).label, error: friendlyAiError(e) });
     }
-    const i = d.ideas.find((x) => x.id === ideaId)!;
-    if (i.status === "developing" || i.status === "spark") i.status = "ready";
-    return created;
-  });
+  }
+
+  if (generated.length) {
+    await mutate((d) => {
+      for (const g of generated) {
+        d.drafts.unshift({
+          id: uid(),
+          ideaId,
+          platform: g.platform,
+          title: g.title,
+          content: g.content,
+          status: "draft",
+          formatMeta: g.formatMeta,
+          createdAt: now(),
+          updatedAt: now(),
+        });
+      }
+      const i = d.ideas.find((x) => x.id === ideaId)!;
+      if (i.status === "developing" || i.status === "spark") i.status = "ready";
+    });
+  }
 
   revalidatePath(`/ideas/${ideaId}`);
   revalidatePath("/drafts");
-  return ids;
+  return { created: generated.length, failures };
 }
 
 export async function saveDraft(
@@ -167,7 +180,8 @@ export async function generateSlideImageAction(
     slideIndex,
     total,
     effectiveBrand(db.settings),
-    slide.isOutro
+    slide.isOutro,
+    slide.layout
   );
   await mutate((d) => {
     const s = d.drafts.find((x) => x.id === draftId)?.formatMeta?.slides?.[slideIndex];
@@ -187,7 +201,7 @@ export async function generateAllSlidesAction(
   if (!draft || !slides?.length) throw new Error("No slides");
   const brand = effectiveBrand(db.settings);
   const urls = await Promise.all(
-    slides.map((s, i) => renderSlideCard(s.text, i, slides.length, brand, s.isOutro))
+    slides.map((s, i) => renderSlideCard(s.text, i, slides.length, brand, s.isOutro, s.layout))
   );
   await mutate((d) => {
     const ss = d.drafts.find((x) => x.id === draftId)?.formatMeta?.slides;
@@ -206,7 +220,9 @@ export async function generatePostImageAction(
   const draft = db.drafts.find((x) => x.id === draftId);
   if (!draft) throw new Error("Draft not found");
 
-  const prompt = customPrompt?.trim() || draft.title || draft.content.slice(0, 120);
+  // Visuals should reflect BOTH the title and the actual content/description.
+  const prompt =
+    customPrompt?.trim() || `${draft.title}\n\n${draft.content.slice(0, 500)}`.trim();
   const result = await generateVisual(prompt, draft.title, effectiveBrand(db.settings));
   await mutate((d) => {
     const x = d.drafts.find((y) => y.id === draftId);

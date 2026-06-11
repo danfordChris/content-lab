@@ -234,32 +234,41 @@ function CarouselEditor({ draft }: { draft: Draft }) {
       const [{ default: JSZip }, { jsPDF }] = await Promise.all([import("jszip"), import("jspdf")]);
       const zip = new JSZip();
       let captions = `${draft.title}\n\n`;
-      const pages: { dataUrl: string; type: "PNG" | "JPEG" }[] = [];
+      const pages: { dataUrl: string; type: "PNG" | "JPEG"; w: number; h: number }[] = [];
       for (let i = 0; i < slides.length; i++) {
         const s = slides[i];
         captions += `Slide ${i + 1}: ${s.text}\n\n`;
         if (s.imageUrl) {
           // Rasterize SVG slides to PNG so they're upload-ready; pass raster as-is.
-          const blob = s.imageUrl.endsWith(".svg")
-            ? await svgUrlToPngBlob(s.imageUrl)
-            : await (await fetch(s.imageUrl)).blob();
+          let blob: Blob;
+          let w = 1080;
+          let h = 1350;
+          if (s.imageUrl.endsWith(".svg")) {
+            const r = await svgUrlToPngBlob(s.imageUrl);
+            blob = r.blob;
+            w = r.w;
+            h = r.h;
+          } else {
+            blob = await (await fetch(s.imageUrl)).blob();
+          }
           const ext = s.imageUrl.endsWith(".svg") ? "png" : s.imageUrl.split(".").pop() || "jpg";
           zip.file(`slide-${String(i + 1).padStart(2, "0")}.${ext}`, blob);
-          pages.push({ dataUrl: await blobToDataUrl(blob), type: ext === "png" ? "PNG" : "JPEG" });
+          pages.push({ dataUrl: await blobToDataUrl(blob), type: ext === "png" ? "PNG" : "JPEG", w, h });
         }
       }
-      // Bundle the slides as a single in-order PDF — this is the exact file
-      // LinkedIn document-post carousels accept.
+      // Bundle the slides as a single in-order PDF — the exact file LinkedIn
+      // document-post carousels accept. Page size matches the slide aspect.
       if (pages.length) {
+        const first = pages[0];
         const pdf = new jsPDF({
-          orientation: "portrait",
+          orientation: first.h >= first.w ? "portrait" : "landscape",
           unit: "px",
-          format: [1080, 1080],
+          format: [first.w, first.h],
           hotfixes: ["px_scaling"],
         });
         pages.forEach((p, i) => {
-          if (i > 0) pdf.addPage([1080, 1080], "portrait");
-          pdf.addImage(p.dataUrl, p.type, 0, 0, 1080, 1080);
+          if (i > 0) pdf.addPage([p.w, p.h], p.h >= p.w ? "portrait" : "landscape");
+          pdf.addImage(p.dataUrl, p.type, 0, 0, p.w, p.h);
         });
         zip.file(`${slugify(draft.title)}-carousel.pdf`, pdf.output("blob"));
       }

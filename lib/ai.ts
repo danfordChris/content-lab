@@ -9,6 +9,7 @@ import type {
   Idea,
   Pillar,
   Platform,
+  SlideLayout,
 } from "./types";
 import { DEFAULT_BRAND, platformMeta } from "./types";
 
@@ -25,6 +26,8 @@ const PILLAR_VALUES = [
 const KEY = process.env.OPENAI_API_KEY;
 const BASE = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/+$/, "");
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+// Stronger model for user-facing writing (drafts, carousels); falls back to MODEL.
+const MODEL_QUALITY = process.env.OPENAI_MODEL_QUALITY ?? "gemini-2.5-pro";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1";
 // "auto" tries the most reliable configured provider first, then falls back.
 // Force one with IMAGE_PROVIDER = together | pollinations | openai.
@@ -65,12 +68,17 @@ function buildSystem(brand?: BrandSettings): string {
   return s;
 }
 
-async function chat(prompt: string, json: boolean, system: string = SYSTEM_BASE): Promise<string> {
+async function chat(
+  prompt: string,
+  json: boolean,
+  system: string = SYSTEM_BASE,
+  model: string = MODEL
+): Promise<string> {
   const res = await fetch(`${BASE}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       temperature: json ? 0.4 : 0.7,
       messages: [
         { role: "system", content: system },
@@ -82,6 +90,40 @@ async function chat(prompt: string, json: boolean, system: string = SYSTEM_BASE)
   if (!res.ok) throw new Error(`AI error ${res.status}: ${await res.text()}`);
   const data = await res.json();
   return data.choices?.[0]?.message?.content ?? "";
+}
+
+/** Writing-quality chain: Pro → Flash → short wait → Flash again → throw.
+ *  Used for user-facing words (drafts, carousels). Never silently degrades to templates. */
+async function chatQuality(prompt: string, json: boolean, system: string): Promise<string> {
+  try {
+    return await chat(prompt, json, system, MODEL_QUALITY);
+  } catch (e1) {
+    console.error(`ai: ${MODEL_QUALITY} failed, retrying with ${MODEL} →`, trim(e1));
+    try {
+      return await chat(prompt, json, system, MODEL);
+    } catch (e2) {
+      // Transient (rate limit / high demand) → brief backoff, then one more try.
+      if (/\b(429|503)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|high demand/i.test(String(e2))) {
+        await new Promise((r) => setTimeout(r, 4000));
+        return await chat(prompt, json, system, MODEL);
+      }
+      throw e2;
+    }
+  }
+}
+
+function trim(e: unknown): string {
+  return (e instanceof Error ? e.message : String(e)).slice(0, 160);
+}
+
+/** Turn raw provider errors into something a creator understands. */
+export function friendlyAiError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.includes("429") || /RESOURCE_EXHAUSTED|quota/i.test(msg))
+    return "AI rate limit hit — wait a minute and try again";
+  if (/5\d\d/.test(msg) || /fetch failed|network/i.test(msg))
+    return "AI provider error — try again shortly";
+  return msg.slice(0, 140);
 }
 
 // ── Image generation (OpenAI Images API) ─────────────────────────────────────
@@ -534,120 +576,332 @@ export async function renderSlideCard(
   index: number,
   total: number,
   brand?: BrandSettings,
-  isOutro = false
+  isOutro = false,
+  layout?: SlideLayout
 ): Promise<string> {
-  const svg = isOutro
-    ? renderOutroSvg(index, total, brand)
-    : renderContentSlideSvg(text, index, total, brand);
+  const avatar = await fetchAvatarDataUrl(brand?.avatarUrl);
+  const kind: SlideLayout = isOutro
+    ? "outro"
+    : (layout ?? (index === 0 ? "cover" : "text"));
+  const svg =
+    kind === "outro"
+      ? renderOutroSvg(index, total, brand, avatar)
+      : kind === "cover"
+        ? renderCoverSvg(text, index, total, brand, avatar)
+        : kind === "statement"
+          ? renderStatementSvg(text, index, total, brand, avatar)
+          : kind === "stat"
+            ? renderStatSvg(text, index, total, brand, avatar)
+            : renderContentSlideSvg(text, index, total, brand, avatar);
   return saveImage(Buffer.from(svg, "utf8"), "svg");
 }
 
-function slideChrome(brand?: BrandSettings) {
+// Avatar photos are fetched once and inlined as data URLs (so browser-side
+// PNG rasterization is never tainted by cross-origin images).
+const avatarCache = new Map<string, string | null>();
+async function fetchAvatarDataUrl(url?: string): Promise<string | null> {
+  if (!url?.trim()) return null;
+  if (avatarCache.has(url)) return avatarCache.get(url)!;
+  try {
+    const res = await fetch(url);
+    if (!res.ok || !res.headers.get("content-type")?.startsWith("image/")) throw new Error("bad");
+    const b64 = Buffer.from(await res.arrayBuffer()).toString("base64");
+    const dataUrl = `data:${res.headers.get("content-type")};base64,${b64}`;
+    avatarCache.set(url, dataUrl);
+    return dataUrl;
+  } catch {
+    avatarCache.set(url, null);
+    return null;
+  }
+}
+
+// ── Editorial slide system (1080×1350, name/role header, avatar footer) ──────
+const SLIDE_W = 1080;
+const SLIDE_H = 1350;
+const SLIDE_PAD = 80;
+const SANS = "ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif";
+const SERIF = "Georgia, 'Times New Roman', serif";
+const MONO_FONT = "ui-mono, 'JetBrains Mono', 'SF Mono', Menlo, monospace";
+
+type Chrome = {
+  accent: string;
+  darkBg: string;
+  lightBg: string;
+  ink: string;
+  name: string;
+  role: string;
+  avatar: string | null;
+};
+
+function chromeFor(brand?: BrandSettings, avatar?: string | null): Chrome {
   const st = brand?.imageStyle ?? {};
   return {
-    W: 1080,
-    H: 1080,
-    padX: 96,
-    bg: pickHex(st.background, "#0A0A0A"),
-    fg: pickHex(st.primaryColor, "#FFFFFF"),
     accent: pickHex(st.accentColor, "#2563EB"),
-    gray: "#8A8A8A",
-    mono: "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace",
-    sans: "ui-sans-serif, -apple-system, 'Segoe UI', sans-serif",
+    darkBg: pickHex(st.background, "#0A0A0A"),
+    lightBg: "#F7F5F0",
+    ink: "#16213E",
+    name: brand?.displayName || DEFAULT_BRAND.displayName || "Danford Chris",
+    role: brand?.role || DEFAULT_BRAND.role || "",
+    avatar: avatar ?? null,
   };
 }
 
-function slideFrame(c: ReturnType<typeof slideChrome>, index: number, total: number, body: string) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${c.W}" height="${c.H}" viewBox="0 0 ${c.W} ${c.H}">
-  <rect width="${c.W}" height="${c.H}" fill="${c.bg}"/>
-  <text x="${c.padX}" y="128" font-family="${c.mono}" font-size="36"><tspan fill="${c.gray}">&lt;</tspan><tspan fill="${c.fg}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="${c.gray}">/&gt;</tspan></text>
-  <rect x="${c.padX}" y="176" width="96" height="8" rx="4" fill="${c.accent}"/>
-  ${body}
-  <text x="${c.W - c.padX}" y="${c.H - 84}" text-anchor="end" fill="${c.gray}" font-family="${c.mono}" font-size="34">${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}</text>
-  <rect x="${c.padX}" y="${c.H - 64}" width="${c.W - c.padX * 2}" height="3" fill="${c.accent}" opacity="0.5"/>
+function monogram(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+/** Wraps a page: subtle texture, header (name/role + page pill), footer (avatar + arrow). */
+function pageFrame(
+  c: Chrome,
+  index: number,
+  total: number,
+  opts: { dark: boolean; body: string; showArrow?: boolean }
+): string {
+  const bg = opts.dark ? c.darkBg : c.lightBg;
+  const nameColor = opts.dark ? "#FFFFFF" : c.ink;
+  const roleColor = opts.dark ? "#9AA3B2" : "#5B6B8A";
+  const lineColor = opts.dark ? "rgba(255,255,255,0.18)" : "rgba(22,33,62,0.18)";
+  const texColor = opts.dark ? "#FFFFFF" : c.accent;
+  const texOp = opts.dark ? 0.04 : 0.05;
+  const showArrow = opts.showArrow ?? true;
+
+  // Avatar (photo clip or monogram circle).
+  const aX = SLIDE_PAD + 28;
+  const aY = SLIDE_H - 78;
+  const avatar = c.avatar
+    ? `<clipPath id="av${index}"><circle cx="${aX}" cy="${aY}" r="28"/></clipPath>
+  <image href="${c.avatar}" x="${aX - 28}" y="${aY - 28}" width="56" height="56" preserveAspectRatio="xMidYMid slice" clip-path="url(#av${index})"/>
+  <circle cx="${aX}" cy="${aY}" r="28" fill="none" stroke="${c.accent}" stroke-width="3"/>`
+    : `<circle cx="${aX}" cy="${aY}" r="28" fill="${c.accent}"/>
+  <text x="${aX}" y="${aY + 9}" text-anchor="middle" fill="#fff" font-family="${SANS}" font-size="24" font-weight="700">${escapeXml(monogram(c.name))}</text>`;
+
+  const arrow = showArrow
+    ? `<g stroke="${opts.dark ? "#FFFFFF" : c.ink}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="${SLIDE_W - SLIDE_PAD - 44}" y1="${SLIDE_H - 78}" x2="${SLIDE_W - SLIDE_PAD}" y2="${SLIDE_H - 78}"/>
+    <polyline points="${SLIDE_W - SLIDE_PAD - 16},${SLIDE_H - 94} ${SLIDE_W - SLIDE_PAD},${SLIDE_H - 78} ${SLIDE_W - SLIDE_PAD - 16},${SLIDE_H - 62}"/>
+  </g>`
+    : "";
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${SLIDE_W}" height="${SLIDE_H}" viewBox="0 0 ${SLIDE_W} ${SLIDE_H}">
+  <rect width="${SLIDE_W}" height="${SLIDE_H}" fill="${bg}"/>
+  <g fill="none" stroke="${texColor}" stroke-width="2" opacity="${texOp}">
+    <path d="M-100 300 Q 400 120 1180 360"/>
+    <path d="M-100 760 Q 540 560 1180 820"/>
+    <path d="M-100 1120 Q 480 980 1180 1180"/>
+  </g>
+  <text x="${SLIDE_PAD}" y="96" fill="${nameColor}" font-family="${SANS}" font-size="30" font-weight="700">${escapeXml(c.name)}</text>
+  ${c.role ? `<text x="${SLIDE_PAD}" y="130" fill="${roleColor}" font-family="${SERIF}" font-style="italic" font-size="23">${escapeXml(c.role)}</text>` : ""}
+  <rect x="${SLIDE_W - SLIDE_PAD - 118}" y="64" width="118" height="44" rx="22" fill="none" stroke="${lineColor}" stroke-width="2"/>
+  <text x="${SLIDE_W - SLIDE_PAD - 59}" y="92" text-anchor="middle" fill="${nameColor}" font-family="${MONO_FONT}" font-size="24">${String(index + 1).padStart(2, "0")}/${String(total).padStart(2, "0")}</text>
+  ${opts.body}
+  ${avatar}
+  ${arrow}
 </svg>`;
 }
 
-/** Content slide: first line renders as a big heading, the rest as body lines. */
-function renderContentSlideSvg(text: string, index: number, total: number, brand?: BrandSettings): string {
-  const c = slideChrome(brand);
-  const isCover = index === 0;
-  const topReserve = 230;
-  const botReserve = 170;
-  const avail = c.H - topReserve - botReserve;
+/** COVER — dark, huge caps headline + blue serif kicker. */
+function renderCoverSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
+  const c = chromeFor(brand, avatar);
+  const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const headline = (paras[0] ?? "").toUpperCase();
+  const kicker = paras[1] ?? "";
+  const maxW = SLIDE_W - SLIDE_PAD * 2;
+
+  let hFs = 120;
+  let lines: string[] = [];
+  for (; hFs >= 56; hFs -= 6) {
+    lines = wrapText(headline, Math.max(6, Math.floor(maxW / (hFs * 0.58))));
+    if (lines.length <= 4 && lines.length * hFs * 1.04 <= 760) break;
+  }
+  const parts: string[] = [];
+  let y = 560 - ((lines.length - 1) * hFs * 1.04) / 2;
+  for (const ln of lines) {
+    parts.push(
+      `<text x="${SLIDE_PAD}" y="${y.toFixed(0)}" fill="#FFFFFF" font-family="${SANS}" font-size="${hFs}" font-weight="800" letter-spacing="-1">${escapeXml(ln)}</text>`
+    );
+    y += hFs * 1.04;
+  }
+  if (kicker) {
+    y += 36;
+    for (const ln of wrapText(kicker, Math.floor(maxW / (46 * 0.5)))) {
+      parts.push(
+        `<text x="${SLIDE_PAD}" y="${y.toFixed(0)}" fill="${c.accent}" font-family="${SERIF}" font-style="italic" font-size="46">${escapeXml(ln)}</text>`
+      );
+      y += 60;
+    }
+  }
+  return pageFrame(c, index, total, { dark: true, body: parts.join("\n  ") });
+}
+
+/** TEXT — light editorial page: navy heading + serif body, arrow bullets / numbered steps. */
+function renderContentSlideSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
+  const c = chromeFor(brand, avatar);
+  const top = 230;
+  const bot = 150;
+  const avail = SLIDE_H - top - bot;
+  const maxW = SLIDE_W - SLIDE_PAD * 2;
   const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   const heading = paras[0] ?? "";
   const bodyParas = paras.slice(1);
 
-  let hFs = isCover ? 76 : 56;
-  let bFs = 30;
-  let hLines: string[] = [];
-  let bLines: string[] = [];
-  for (; hFs >= 34; hFs -= 4) {
-    bFs = Math.max(26, Math.round(hFs * 0.55));
-    hLines = wrapText(heading, Math.max(8, Math.floor((c.W - c.padX * 2) / (hFs * 0.6))));
-    bLines = bodyParas.flatMap((p) =>
-      wrapText(p, Math.max(8, Math.floor((c.W - c.padX * 2) / (bFs * 0.58))))
-    );
-    const hh = hLines.length * hFs * 1.28;
-    const bh = bLines.length ? 30 + bLines.length * bFs * 1.55 : 0;
-    if (hh + bh <= avail) break;
-  }
-  const blockH = hLines.length * hFs * 1.28 + (bLines.length ? 30 + bLines.length * bFs * 1.55 : 0);
-  let y = topReserve + Math.max(0, (avail - blockH) / 2) + hFs * 0.85;
-  const parts: string[] = [];
-  for (const ln of hLines) {
-    parts.push(
-      `<text x="${c.padX}" y="${y.toFixed(0)}" fill="${c.fg}" font-family="${c.mono}" font-size="${hFs}" font-weight="700">${escapeXml(ln)}</text>`
-    );
-    y += hFs * 1.28;
-  }
-  if (bLines.length) {
-    y += 30;
-    for (const ln of bLines) {
-      parts.push(
-        `<text x="${c.padX}" y="${y.toFixed(0)}" fill="#c2c2c9" font-family="${c.sans}" font-size="${bFs}">${escapeXml(ln)}</text>`
-      );
-      y += bFs * 1.55;
+  let hFs = 60;
+  let bFs = 36;
+  let layout!: { hLines: string[]; body: { text: string; bullet?: string }[]; hFs: number; bFs: number; total: number };
+  for (; hFs >= 38; hFs -= 4) {
+    bFs = Math.max(28, Math.round(hFs * 0.6));
+    const hLines = wrapText(heading, Math.max(6, Math.floor(maxW / (hFs * 0.58))));
+    const body: { text: string; bullet?: string }[] = [];
+    for (const p of bodyParas) {
+      const m = p.match(/^(→|->|-|\d+\.)\s*(.*)$/);
+      const bullet = m ? (/\d/.test(m[1]) ? m[1].replace(".", "") : "→") : undefined;
+      const content = m ? m[2] : p;
+      const wrapped = wrapText(content, Math.max(6, Math.floor((maxW - (bullet ? 56 : 0)) / (bFs * 0.5))));
+      wrapped.forEach((ln, i) => body.push({ text: ln, bullet: i === 0 ? bullet : undefined }));
+      body.push({ text: "" }); // paragraph gap
     }
+    const h = hLines.length * hFs * 1.18 + 36 + body.reduce((a, b) => a + (b.text ? bFs * 1.4 : bFs * 0.5), 0);
+    if (h <= avail) {
+      layout = { hLines, body, hFs, bFs, total: h };
+      break;
+    }
+    layout = { hLines, body, hFs, bFs, total: h };
   }
-  return slideFrame(c, index, total, parts.join("\n  "));
+
+  const parts: string[] = [];
+  let y = top + Math.max(0, (avail - layout.total) / 2) + layout.hFs * 0.85;
+  for (const ln of layout.hLines) {
+    parts.push(
+      `<text x="${SLIDE_PAD}" y="${y.toFixed(0)}" fill="${c.ink}" font-family="${SANS}" font-size="${layout.hFs}" font-weight="800" letter-spacing="-0.5">${escapeXml(ln)}</text>`
+    );
+    y += layout.hFs * 1.18;
+  }
+  y += 36;
+  for (const b of layout.body) {
+    if (!b.text) {
+      y += layout.bFs * 0.5;
+      continue;
+    }
+    const x = b.bullet !== undefined ? SLIDE_PAD + 56 : SLIDE_PAD;
+    if (b.bullet !== undefined) {
+      parts.push(
+        `<text x="${SLIDE_PAD}" y="${y.toFixed(0)}" fill="${c.accent}" font-family="${SANS}" font-size="${layout.bFs}" font-weight="700">${escapeXml(b.bullet)}</text>`
+      );
+    }
+    parts.push(
+      `<text x="${x}" y="${y.toFixed(0)}" fill="#1c1c1c" font-family="${SERIF}" font-size="${layout.bFs}">${escapeXml(b.text)}</text>`
+    );
+    y += layout.bFs * 1.4;
+  }
+  return pageFrame(c, index, total, { dark: false, body: parts.join("\n  ") });
 }
 
-/** Final branded outro slide: wordmark + follow CTA + social handles. */
-function renderOutroSvg(index: number, total: number, brand?: BrandSettings): string {
-  const c = slideChrome(brand);
+/** STATEMENT — dark, one huge centered line (+ optional quiet sub-line). */
+function renderStatementSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
+  const c = chromeFor(brand, avatar);
+  const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const main = paras[0] ?? "";
+  const sub = paras.slice(1).join(" ");
+  const maxW = SLIDE_W - SLIDE_PAD * 2;
+  let fs = 92;
+  let lines: string[] = [];
+  for (; fs >= 48; fs -= 6) {
+    lines = wrapText(main, Math.max(6, Math.floor(maxW / (fs * 0.56))));
+    if (lines.length <= 5 && lines.length * fs * 1.12 <= 720) break;
+  }
+  const parts: string[] = [];
+  let y = SLIDE_H / 2 - (lines.length * fs * 1.12) / 2 + fs * 0.7;
+  for (const ln of lines) {
+    parts.push(
+      `<text x="${SLIDE_W / 2}" y="${y.toFixed(0)}" text-anchor="middle" fill="#FFFFFF" font-family="${SANS}" font-size="${fs}" font-weight="800" letter-spacing="-1">${escapeXml(ln)}</text>`
+    );
+    y += fs * 1.12;
+  }
+  if (sub) {
+    y += 30;
+    for (const ln of wrapText(sub, Math.floor(maxW / (38 * 0.5)))) {
+      parts.push(
+        `<text x="${SLIDE_W / 2}" y="${y.toFixed(0)}" text-anchor="middle" fill="${c.accent}" font-family="${SERIF}" font-style="italic" font-size="38">${escapeXml(ln)}</text>`
+      );
+      y += 50;
+    }
+  }
+  return pageFrame(c, index, total, { dark: true, body: parts.join("\n  ") });
+}
+
+/** STAT — dark, massive blue number + white caption. */
+function renderStatSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
+  const c = chromeFor(brand, avatar);
+  const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const big = paras[0] ?? "";
+  const caption = paras.slice(1).join(" ");
+  const maxW = SLIDE_W - SLIDE_PAD * 2;
+  const bigFs = big.length <= 4 ? 320 : big.length <= 8 ? 200 : 130;
+  const parts: string[] = [];
+  parts.push(
+    `<text x="${SLIDE_W / 2}" y="${SLIDE_H / 2 - 20}" text-anchor="middle" fill="${c.accent}" font-family="${SANS}" font-size="${bigFs}" font-weight="800" letter-spacing="-3">${escapeXml(big)}</text>`
+  );
+  let y = SLIDE_H / 2 + 90;
+  for (const ln of wrapText(caption, Math.floor(maxW / (42 * 0.5)))) {
+    parts.push(
+      `<text x="${SLIDE_W / 2}" y="${y.toFixed(0)}" text-anchor="middle" fill="#FFFFFF" font-family="${SANS}" font-size="42" font-weight="600">${escapeXml(ln)}</text>`
+    );
+    y += 56;
+  }
+  return pageFrame(c, index, total, { dark: true, body: parts.join("\n  ") });
+}
+
+/** Real social-platform icon glyphs (24×24 source), placed in a circle. */
+function socialIcon(name: "instagram" | "tiktok" | "x", cx: number, cy: number, color: string): string {
+  const paths: Record<string, string> = {
+    instagram: `<rect x="3.5" y="3.5" width="17" height="17" rx="5" fill="none" stroke="${color}" stroke-width="2"/><circle cx="12" cy="12" r="3.6" fill="none" stroke="${color}" stroke-width="2"/><circle cx="16.7" cy="7.3" r="1.2" fill="${color}"/>`,
+    x: `<path d="M17.53 3h2.9l-6.34 7.24L21.5 21h-5.84l-4.57-5.98L5.84 21H2.93l6.78-7.75L2.2 3h5.99l4.13 5.46L17.53 3z" fill="${color}"/>`,
+    tiktok: `<path d="M16.6 5.82A4.28 4.28 0 0 1 15.54 3h-3.09v12.4a2.59 2.59 0 1 1-2.59-2.6c.27 0 .53.04.78.12V9.66a5.69 5.69 0 1 0 4.9 5.64V9.01a7.34 7.34 0 0 0 4.3 1.38V7.3a4.3 4.3 0 0 1-3.24-1.48z" fill="${color}"/>`,
+  };
+  return `<g transform="translate(${cx - 18},${cy - 18}) scale(1.5)">${paths[name]}</g>`;
+}
+
+/** OUTRO — dark info page: wordmark, follow CTA, real social icons + handles. */
+function renderOutroSvg(index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
+  const c = chromeFor(brand, avatar);
   const socials = { ...DEFAULT_BRAND.socials, ...(brand?.socials ?? {}) };
   const rows = (
     [
-      ["Instagram", socials.instagram ?? ""],
-      ["TikTok", socials.tiktok ?? ""],
-      ["X / Twitter", socials.x ?? ""],
-    ] as [string, string][]
+      ["instagram", socials.instagram ?? ""],
+      ["tiktok", socials.tiktok ?? ""],
+      ["x", socials.x ?? ""],
+    ] as ["instagram" | "tiktok" | "x", string][]
   ).filter(([, h]) => h);
 
   const parts: string[] = [];
   parts.push(
-    `<text x="${c.W / 2}" y="400" text-anchor="middle" font-family="${c.mono}" font-size="60"><tspan fill="${c.gray}">&lt;</tspan><tspan fill="${c.fg}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="${c.gray}">/&gt;</tspan></text>`
+    `<text x="${SLIDE_W / 2}" y="430" text-anchor="middle" font-family="${MONO_FONT}" font-size="68" font-weight="700"><tspan fill="#8A8A8A">&lt;</tspan><tspan fill="#FFFFFF">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="#8A8A8A">/&gt;</tspan></text>`
   );
-  parts.push(`<rect x="${c.W / 2 - 64}" y="436" width="128" height="8" rx="4" fill="${c.accent}"/>`);
+  parts.push(`<rect x="${SLIDE_W / 2 - 70}" y="470" width="140" height="8" rx="4" fill="${c.accent}"/>`);
   parts.push(
-    `<text x="${c.W / 2}" y="524" text-anchor="middle" fill="${c.fg}" font-family="${c.sans}" font-size="38" font-weight="700">Follow for more</text>`
+    `<text x="${SLIDE_W / 2}" y="580" text-anchor="middle" fill="#FFFFFF" font-family="${SANS}" font-size="46" font-weight="800">Follow for more</text>`
   );
   parts.push(
-    `<text x="${c.W / 2}" y="568" text-anchor="middle" fill="${c.gray}" font-family="${c.sans}" font-size="26">(Nifuate kwa zaidi)</text>`
+    `<text x="${SLIDE_W / 2}" y="628" text-anchor="middle" fill="#9AA3B2" font-family="${SERIF}" font-style="italic" font-size="30">(Nifuate kwa zaidi)</text>`
   );
-  let y = 668;
-  for (const [platform, handle] of rows) {
+  let y = 740;
+  const rowX = SLIDE_W / 2 - 210;
+  for (const [name, handle] of rows) {
+    parts.push(`<circle cx="${rowX + 28}" cy="${y - 12}" r="32" fill="rgba(37,99,235,0.18)"/>`);
+    parts.push(socialIcon(name, rowX + 28, y - 12, "#FFFFFF"));
     parts.push(
-      `<text x="${c.W / 2 - 24}" y="${y}" text-anchor="end" fill="${c.gray}" font-family="${c.sans}" font-size="28">${escapeXml(platform)}</text>`
+      `<text x="${rowX + 84}" y="${y}" font-family="${MONO_FONT}" font-size="34" font-weight="700"><tspan fill="${c.accent}">@</tspan><tspan fill="#FFFFFF">${escapeXml(handle)}</tspan></text>`
     );
-    parts.push(
-      `<text x="${c.W / 2 + 24}" y="${y}" font-family="${c.mono}" font-size="30" font-weight="700"><tspan fill="${c.accent}">@</tspan><tspan fill="${c.fg}">${escapeXml(handle)}</tspan></text>`
-    );
-    y += 78;
+    y += 96;
   }
-  return slideFrame(c, index, total, parts.join("\n  "));
+  parts.push(
+    `<text x="${SLIDE_W / 2}" y="${y + 60}" text-anchor="middle" fill="${c.accent}" font-family="${SERIF}" font-style="italic" font-size="36">Which pillar should I cover next?</text>`
+  );
+  return pageFrame(c, index, total, { dark: true, body: parts.join("\n  "), showArrow: false });
 }
 
 function wrapText(text: string, maxChars: number): string[] {
@@ -721,43 +975,53 @@ export async function generateDraft(
 ${platformRules(platform)}
 Open with a strong hook and end with a clear CTA. Output only the text (no preamble).
 <user_content>${brief}</user_content>`;
-  try {
-    const content = await chat(prompt, false, buildSystem(brand));
-    return { title: `${idea.title} — ${platformMeta(platform).label}`, content: content.trim() };
-  } catch {
-    return fallbackDraft(idea, platform);
-  }
+  // No silent template fallback: if the AI fails, the caller surfaces the real error.
+  const content = await chatQuality(prompt, false, buildSystem(brand));
+  return { title: `${idea.title} — ${platformMeta(platform).label}`, content: content.trim() };
 }
 
 // ── Carousel (structured slides + branded outro, max 10 pages) ───────────────
+const SLIDE_LAYOUTS = ["cover", "text", "statement", "stat"] as const;
+
 export async function generateCarousel(idea: Idea, brand?: BrandSettings): Promise<GeneratedDraft> {
   let slides: CarouselSlide[];
   if (aiEnabled) {
     const brief = idea.brief
-      ? `ANGLE: ${idea.brief.angle}\nOUTLINE: ${idea.brief.outline.join("; ")}`
+      ? `TITLE: ${idea.title}\nANGLE: ${idea.brief.angle}\nOUTLINE: ${idea.brief.outline.join("; ")}\nEXAMPLES: ${(idea.brief.examples ?? []).join("; ")}\nNOTES: ${idea.body ?? ""}`
       : `TITLE: ${idea.title}\nNOTES: ${idea.body ?? ""}`;
-    const prompt = `Create a DETAILED social carousel of 8-9 content slides. Return STRICT JSON:
-{ "slides": [ { "text": string, "imagePrompt": string } ] }
-- Slide 1 is the hook/cover: one bold, scroll-stopping line only.
-- Slides 2 onward: "text" must be a short punchy heading (max 8 words) on the FIRST line,
-  followed by 2-3 short, concrete supporting sentences on new lines (separate with \\n).
-  Make them genuinely instructive — real examples, numbers, steps, trade-offs. Where it
-  helps the audience, add a short Swahili phrase in parentheses.
-- Do NOT include a follow/CTA slide — a branded outro slide is appended automatically.
-- "imagePrompt" describes a visual for that slide.
+    const prompt = `Create a DETAILED editorial social carousel of 8-9 content slides. Return STRICT JSON:
+{ "slides": [ { "layout": "cover"|"text"|"statement"|"stat", "text": string } ] }
+
+LAYOUTS (mix them like an Apple keynote — use the layout the content deserves):
+- "cover" (slide 1 ONLY): line 1 = a bold scroll-stopping headline (max 6 words);
+  optional line 2 = a short kicker sentence.
+- "text" (most slides): line 1 = punchy heading (max 8 words); then 2-4 short concrete
+  lines. Start a line with "→ " to make it an arrow bullet, or "1." / "2." for steps.
+- "statement" (0-2 per carousel): ONE huge punchy claim, max 10 words; optional second
+  line as a quiet sub-line. Use when a single sentence deserves a full page.
+- "stat" (0-1 per carousel): line 1 = the big number/metric ONLY (e.g. "40×" or "2048");
+  line 2 = what it means in one short sentence. Use only when a real number exists.
+
+CONTENT RULES:
+- Every slide must teach something CONCRETE and SPECIFIC about THIS topic — a step, a
+  code-level fact, an endpoint, a number, a pitfall. NEVER generic advice that could fit
+  any topic. A reader should finish knowing HOW to do the thing.
+- Where it genuinely helps, add a short Swahili phrase in parentheses.
+- Do NOT include a follow/CTA slide — a branded outro page is appended automatically.
 <user_content>${brief}</user_content>`;
-    try {
-      const parsed = parseJson(await chat(prompt, true, buildSystem(brand)));
-      slides = (Array.isArray(parsed.slides) ? parsed.slides : [])
-        .map((s: any) => ({
-          text: String(s.text ?? ""),
-          imagePrompt: s.imagePrompt ? String(s.imagePrompt) : undefined,
-        }))
-        .filter((s: CarouselSlide) => s.text.trim());
-      if (slides.length === 0) slides = fallbackSlides(idea);
-    } catch {
-      slides = fallbackSlides(idea);
-    }
+    // Quality model + no silent fallback: a failed carousel surfaces a real error.
+    const parsed = parseJson(await chatQuality(prompt, true, buildSystem(brand)));
+    slides = (Array.isArray(parsed.slides) ? parsed.slides : [])
+      .map((s: any, i: number) => ({
+        text: String(s.text ?? ""),
+        layout: (SLIDE_LAYOUTS as readonly string[]).includes(s.layout)
+          ? (i === 0 ? "cover" : s.layout === "cover" ? "text" : s.layout)
+          : i === 0
+            ? "cover"
+            : "text",
+      }))
+      .filter((s: CarouselSlide) => s.text.trim());
+    if (slides.length === 0) throw new Error("AI returned no slides — try again");
   } else {
     slides = fallbackSlides(idea);
   }
@@ -770,6 +1034,7 @@ export async function generateCarousel(idea: Idea, brand?: BrandSettings): Promi
   slides.push({
     text: `Follow <DanfordChris/> for more${handles ? ` — ${handles}` : ""}`,
     isOutro: true,
+    layout: "outro",
   });
   const content = slides.map((sl, i) => `Slide ${i + 1}: ${sl.text}`).join("\n");
   return { title: `${idea.title} — Carousel`, content, formatMeta: { slides } };
@@ -908,11 +1173,13 @@ function fallbackBrief(idea: Idea): ExpandedBrief {
 }
 
 function fallbackSlides(idea: Idea): CarouselSlide[] {
-  const t = idea.title;
+  // Keyless/local mode only. Truncate long titles to the first clause so the
+  // template never embeds a paragraph mid-sentence.
+  const t = (idea.title.split(/[,.;—–]/)[0] ?? idea.title).trim().slice(0, 60);
   const hook = idea.brief?.hooks?.[0] ?? `Most devs misunderstand ${t}.`;
   // Note: no follow/CTA slide here — generateCarousel appends the branded outro.
   return [
-    { text: hook, imagePrompt: `Bold cover slide titled "${t}"` },
+    { text: hook, layout: "cover", imagePrompt: `Bold cover slide titled "${t}"` },
     {
       text: `The problem (Tatizo)\nEveryone explains ${t} in theory.\nAlmost nobody shows the working example.`,
       imagePrompt: `Confused developer at a messy whiteboard`,
