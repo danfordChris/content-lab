@@ -161,7 +161,13 @@ export async function generateSlideImageAction(
   // Carousel slides are rendered as branded SVG cards with the REAL slide text
   // (always readable + on-brand), not drawn by an image model.
   const total = draft.formatMeta?.slides?.length ?? 1;
-  const url = await renderSlideCard(slide.text, slideIndex, total, effectiveBrand(db.settings));
+  const url = await renderSlideCard(
+    slide.text,
+    slideIndex,
+    total,
+    effectiveBrand(db.settings),
+    slide.isOutro
+  );
   await mutate((d) => {
     const s = d.drafts.find((x) => x.id === draftId)?.formatMeta?.slides?.[slideIndex];
     if (s) s.imageUrl = url;
@@ -180,7 +186,7 @@ export async function generateAllSlidesAction(
   if (!draft || !slides?.length) throw new Error("No slides");
   const brand = effectiveBrand(db.settings);
   const urls = await Promise.all(
-    slides.map((s, i) => renderSlideCard(s.text, i, slides.length, brand))
+    slides.map((s, i) => renderSlideCard(s.text, i, slides.length, brand, s.isOutro))
   );
   await mutate((d) => {
     const ss = d.drafts.find((x) => x.id === draftId)?.formatMeta?.slides;

@@ -10,7 +10,7 @@ import type {
   Pillar,
   Platform,
 } from "./types";
-import { platformMeta } from "./types";
+import { DEFAULT_BRAND, platformMeta } from "./types";
 
 const PILLAR_VALUES = [
   "code_craft",
@@ -532,40 +532,121 @@ export async function renderSlideCard(
   text: string,
   index: number,
   total: number,
-  brand?: BrandSettings
+  brand?: BrandSettings,
+  isOutro = false
 ): Promise<string> {
-  const W = 1080;
-  const H = 1080;
-  const padX = 96;
-  const st = brand?.imageStyle ?? {};
-  const bg = pickHex(st.background, "#0A0A0A");
-  const fg = pickHex(st.primaryColor, "#FFFFFF");
-  const accent = pickHex(st.accentColor, "#2563EB");
-  const gray = "#8A8A8A";
-  const isCover = index === 0;
-  const topReserve = 230; // wordmark + accent bar
-  const botReserve = 170; // slide number
-  const fit = fitText(text, W, H, padX, topReserve, botReserve, isCover);
-
-  const blockH = fit.lines.length * fit.lineHeight;
-  const startY = topReserve + (H - topReserve - botReserve - blockH) / 2 + fit.fontSize * 0.78;
-  const mono = "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace";
-  const textEls = fit.lines
-    .map(
-      (ln, i) =>
-        `<text x="${padX}" y="${(startY + i * fit.lineHeight).toFixed(0)}" fill="${fg}" font-family="${mono}" font-size="${fit.fontSize}" font-weight="700" xml:space="preserve">${escapeXml(ln)}</text>`
-    )
-    .join("\n  ");
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <rect width="${W}" height="${H}" fill="${bg}"/>
-  <text x="${padX}" y="128" font-family="${mono}" font-size="36"><tspan fill="${gray}">&lt;</tspan><tspan fill="${fg}">Danford</tspan><tspan fill="${accent}">Chris</tspan><tspan fill="${gray}">/&gt;</tspan></text>
-  <rect x="${padX}" y="176" width="96" height="8" rx="4" fill="${accent}"/>
-  ${textEls}
-  <text x="${W - padX}" y="${H - 84}" text-anchor="end" fill="${gray}" font-family="${mono}" font-size="34">${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}</text>
-  <rect x="${padX}" y="${H - 64}" width="${W - padX * 2}" height="3" fill="${accent}" opacity="0.5"/>
-</svg>`;
+  const svg = isOutro
+    ? renderOutroSvg(index, total, brand)
+    : renderContentSlideSvg(text, index, total, brand);
   return saveImage(Buffer.from(svg, "utf8"), "svg");
+}
+
+function slideChrome(brand?: BrandSettings) {
+  const st = brand?.imageStyle ?? {};
+  return {
+    W: 1080,
+    H: 1080,
+    padX: 96,
+    bg: pickHex(st.background, "#0A0A0A"),
+    fg: pickHex(st.primaryColor, "#FFFFFF"),
+    accent: pickHex(st.accentColor, "#2563EB"),
+    gray: "#8A8A8A",
+    mono: "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace",
+    sans: "ui-sans-serif, -apple-system, 'Segoe UI', sans-serif",
+  };
+}
+
+function slideFrame(c: ReturnType<typeof slideChrome>, index: number, total: number, body: string) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${c.W}" height="${c.H}" viewBox="0 0 ${c.W} ${c.H}">
+  <rect width="${c.W}" height="${c.H}" fill="${c.bg}"/>
+  <text x="${c.padX}" y="128" font-family="${c.mono}" font-size="36"><tspan fill="${c.gray}">&lt;</tspan><tspan fill="${c.fg}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="${c.gray}">/&gt;</tspan></text>
+  <rect x="${c.padX}" y="176" width="96" height="8" rx="4" fill="${c.accent}"/>
+  ${body}
+  <text x="${c.W - c.padX}" y="${c.H - 84}" text-anchor="end" fill="${c.gray}" font-family="${c.mono}" font-size="34">${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}</text>
+  <rect x="${c.padX}" y="${c.H - 64}" width="${c.W - c.padX * 2}" height="3" fill="${c.accent}" opacity="0.5"/>
+</svg>`;
+}
+
+/** Content slide: first line renders as a big heading, the rest as body lines. */
+function renderContentSlideSvg(text: string, index: number, total: number, brand?: BrandSettings): string {
+  const c = slideChrome(brand);
+  const isCover = index === 0;
+  const topReserve = 230;
+  const botReserve = 170;
+  const avail = c.H - topReserve - botReserve;
+  const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const heading = paras[0] ?? "";
+  const bodyParas = paras.slice(1);
+
+  let hFs = isCover ? 76 : 56;
+  let bFs = 30;
+  let hLines: string[] = [];
+  let bLines: string[] = [];
+  for (; hFs >= 34; hFs -= 4) {
+    bFs = Math.max(26, Math.round(hFs * 0.55));
+    hLines = wrapText(heading, Math.max(8, Math.floor((c.W - c.padX * 2) / (hFs * 0.6))));
+    bLines = bodyParas.flatMap((p) =>
+      wrapText(p, Math.max(8, Math.floor((c.W - c.padX * 2) / (bFs * 0.58))))
+    );
+    const hh = hLines.length * hFs * 1.28;
+    const bh = bLines.length ? 30 + bLines.length * bFs * 1.55 : 0;
+    if (hh + bh <= avail) break;
+  }
+  const blockH = hLines.length * hFs * 1.28 + (bLines.length ? 30 + bLines.length * bFs * 1.55 : 0);
+  let y = topReserve + Math.max(0, (avail - blockH) / 2) + hFs * 0.85;
+  const parts: string[] = [];
+  for (const ln of hLines) {
+    parts.push(
+      `<text x="${c.padX}" y="${y.toFixed(0)}" fill="${c.fg}" font-family="${c.mono}" font-size="${hFs}" font-weight="700">${escapeXml(ln)}</text>`
+    );
+    y += hFs * 1.28;
+  }
+  if (bLines.length) {
+    y += 30;
+    for (const ln of bLines) {
+      parts.push(
+        `<text x="${c.padX}" y="${y.toFixed(0)}" fill="#c2c2c9" font-family="${c.sans}" font-size="${bFs}">${escapeXml(ln)}</text>`
+      );
+      y += bFs * 1.55;
+    }
+  }
+  return slideFrame(c, index, total, parts.join("\n  "));
+}
+
+/** Final branded outro slide: wordmark + follow CTA + social handles. */
+function renderOutroSvg(index: number, total: number, brand?: BrandSettings): string {
+  const c = slideChrome(brand);
+  const socials = { ...DEFAULT_BRAND.socials, ...(brand?.socials ?? {}) };
+  const rows = (
+    [
+      ["Instagram", socials.instagram ?? ""],
+      ["TikTok", socials.tiktok ?? ""],
+      ["X / Twitter", socials.x ?? ""],
+    ] as [string, string][]
+  ).filter(([, h]) => h);
+
+  const parts: string[] = [];
+  parts.push(
+    `<text x="${c.W / 2}" y="400" text-anchor="middle" font-family="${c.mono}" font-size="60"><tspan fill="${c.gray}">&lt;</tspan><tspan fill="${c.fg}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="${c.gray}">/&gt;</tspan></text>`
+  );
+  parts.push(`<rect x="${c.W / 2 - 64}" y="436" width="128" height="8" rx="4" fill="${c.accent}"/>`);
+  parts.push(
+    `<text x="${c.W / 2}" y="524" text-anchor="middle" fill="${c.fg}" font-family="${c.sans}" font-size="38" font-weight="700">Follow for more</text>`
+  );
+  parts.push(
+    `<text x="${c.W / 2}" y="568" text-anchor="middle" fill="${c.gray}" font-family="${c.sans}" font-size="26">(Nifuate kwa zaidi)</text>`
+  );
+  let y = 668;
+  for (const [platform, handle] of rows) {
+    parts.push(
+      `<text x="${c.W / 2 - 24}" y="${y}" text-anchor="end" fill="${c.gray}" font-family="${c.sans}" font-size="28">${escapeXml(platform)}</text>`
+    );
+    parts.push(
+      `<text x="${c.W / 2 + 24}" y="${y}" font-family="${c.mono}" font-size="30" font-weight="700"><tspan fill="${c.accent}">@</tspan><tspan fill="${c.fg}">${escapeXml(handle)}</tspan></text>`
+    );
+    y += 78;
+  }
+  return slideFrame(c, index, total, parts.join("\n  "));
 }
 
 function wrapText(text: string, maxChars: number): string[] {
@@ -583,27 +664,6 @@ function wrapText(text: string, maxChars: number): string[] {
     if (cur) lines.push(cur);
   }
   return lines.length ? lines : [""];
-}
-
-function fitText(
-  text: string,
-  W: number,
-  H: number,
-  padX: number,
-  topReserve: number,
-  botReserve: number,
-  isCover: boolean
-): { fontSize: number; lines: string[]; lineHeight: number } {
-  const avail = H - topReserve - botReserve;
-  const min = 30;
-  for (let fontSize = isCover ? 80 : 60; fontSize > min; fontSize -= 4) {
-    const maxChars = Math.max(8, Math.floor((W - padX * 2) / (fontSize * 0.6)));
-    const lines = wrapText(text, maxChars);
-    const lineHeight = fontSize * 1.32;
-    if (lines.length * lineHeight <= avail) return { fontSize, lines, lineHeight };
-  }
-  const maxChars = Math.max(8, Math.floor((W - padX * 2) / (min * 0.6)));
-  return { fontSize: min, lines: wrapText(text, maxChars), lineHeight: min * 1.32 };
 }
 
 /** Pull a hex from a value like "vivid blue (#2563EB)"; fall back to a named color or default. */
@@ -668,25 +728,31 @@ Open with a strong hook and end with a clear CTA. Output only the text (no pream
   }
 }
 
-// ── Carousel (structured slides + per-slide image prompts) ───────────────────
+// ── Carousel (structured slides + branded outro, max 10 pages) ───────────────
 export async function generateCarousel(idea: Idea, brand?: BrandSettings): Promise<GeneratedDraft> {
   let slides: CarouselSlide[];
   if (aiEnabled) {
     const brief = idea.brief
       ? `ANGLE: ${idea.brief.angle}\nOUTLINE: ${idea.brief.outline.join("; ")}`
       : `TITLE: ${idea.title}\nNOTES: ${idea.body ?? ""}`;
-    const prompt = `Create a 6-8 slide social carousel. Return STRICT JSON:
+    const prompt = `Create a DETAILED social carousel of 8-9 content slides. Return STRICT JSON:
 { "slides": [ { "text": string, "imagePrompt": string } ] }
-- Slide 1 is the hook/cover, the last is a CTA to follow <danfordchris/>.
-- "text" is the on-slide copy (short, punchy, one idea per slide).
+- Slide 1 is the hook/cover: one bold, scroll-stopping line only.
+- Slides 2 onward: "text" must be a short punchy heading (max 8 words) on the FIRST line,
+  followed by 2-3 short, concrete supporting sentences on new lines (separate with \\n).
+  Make them genuinely instructive — real examples, numbers, steps, trade-offs. Where it
+  helps the audience, add a short Swahili phrase in parentheses.
+- Do NOT include a follow/CTA slide — a branded outro slide is appended automatically.
 - "imagePrompt" describes a visual for that slide.
 <user_content>${brief}</user_content>`;
     try {
       const parsed = parseJson(await chat(prompt, true, buildSystem(brand)));
-      slides = (Array.isArray(parsed.slides) ? parsed.slides : []).map((s: any) => ({
-        text: String(s.text ?? ""),
-        imagePrompt: s.imagePrompt ? String(s.imagePrompt) : undefined,
-      }));
+      slides = (Array.isArray(parsed.slides) ? parsed.slides : [])
+        .map((s: any) => ({
+          text: String(s.text ?? ""),
+          imagePrompt: s.imagePrompt ? String(s.imagePrompt) : undefined,
+        }))
+        .filter((s: CarouselSlide) => s.text.trim());
       if (slides.length === 0) slides = fallbackSlides(idea);
     } catch {
       slides = fallbackSlides(idea);
@@ -694,7 +760,17 @@ export async function generateCarousel(idea: Idea, brand?: BrandSettings): Promi
   } else {
     slides = fallbackSlides(idea);
   }
-  const content = slides.map((s, i) => `Slide ${i + 1}: ${s.text}`).join("\n");
+  // Cap at 9 content slides, then append the branded outro (10 pages max).
+  slides = slides.slice(0, 9);
+  const s = brand?.socials ?? {};
+  const handles = [s.instagram && `IG @${s.instagram}`, s.tiktok && `TikTok @${s.tiktok}`, s.x && `X @${s.x}`]
+    .filter(Boolean)
+    .join(" · ");
+  slides.push({
+    text: `Follow <DanfordChris/> for more${handles ? ` — ${handles}` : ""}`,
+    isOutro: true,
+  });
+  const content = slides.map((sl, i) => `Slide ${i + 1}: ${sl.text}`).join("\n");
   return { title: `${idea.title} — Carousel`, content, formatMeta: { slides } };
 }
 
@@ -797,7 +873,7 @@ function platformRules(p: Platform): string {
     case "blog":
       return "Constraints: 800-1200 word markdown post with a TL;DR, headers, a code block, and a conclusion CTA.";
     case "carousel":
-      return "Constraints: 6-8 slides. Slide 1 = hook cover, last = CTA. One idea per slide.";
+      return "Constraints: 8-9 detailed content slides (a branded outro slide is appended automatically, 10 pages max). Slide 1 = hook cover; each other slide = heading + 2-3 supporting lines.";
   }
 }
 
@@ -829,14 +905,29 @@ function fallbackBrief(idea: Idea): ExpandedBrief {
 function fallbackSlides(idea: Idea): CarouselSlide[] {
   const t = idea.title;
   const hook = idea.brief?.hooks?.[0] ?? `Most devs misunderstand ${t}.`;
+  // Note: no follow/CTA slide here — generateCarousel appends the branded outro.
   return [
     { text: hook, imagePrompt: `Bold cover slide titled "${t}"` },
-    { text: `The problem: everyone explains ${t} in theory.`, imagePrompt: `Confused developer at a messy whiteboard` },
-    { text: `Step 1 — start with the smallest version that runs.`, imagePrompt: `A tiny code snippet on a dark terminal` },
-    { text: `Step 2 — watch where it breaks. That's the lesson.`, imagePrompt: `A red error log on screen` },
-    { text: `The trade-off most people miss.`, imagePrompt: `A balance scale, simple vs complex` },
-    { text: `In production: keep it boring. Boring scales.`, imagePrompt: `A calm, clean architecture diagram` },
-    { text: `Follow <danfordchris/> for dev + AI builds.`, imagePrompt: `The <danfordchris/> logo on a dark background` },
+    {
+      text: `The problem (Tatizo)\nEveryone explains ${t} in theory.\nAlmost nobody shows the working example.`,
+      imagePrompt: `Confused developer at a messy whiteboard`,
+    },
+    {
+      text: `Start small (Anza kidogo)\nBuild the smallest version that runs — about 30 lines.\nNo framework, no setup, just the core idea.`,
+      imagePrompt: `A tiny code snippet on a dark terminal`,
+    },
+    {
+      text: `Watch where it breaks\nThe break point is the real lesson, not the happy path.\nNote exactly what failed and why.`,
+      imagePrompt: `A red error log on screen`,
+    },
+    {
+      text: `The hidden trade-off\nThe "advanced" approach often costs more than the problem it solves.\nMeasure before you upgrade.`,
+      imagePrompt: `A balance scale, simple vs complex`,
+    },
+    {
+      text: `In production: keep it boring\nBoring is debuggable, predictable, and cheap.\nBoring scales (Rahisi hukua).`,
+      imagePrompt: `A calm, clean architecture diagram`,
+    },
   ];
 }
 

@@ -20,6 +20,7 @@ export interface CarouselSlide {
   text: string;
   imagePrompt?: string;
   imageUrl?: string;
+  isOutro?: boolean; // the final branded follow-me slide
 }
 
 export interface DraftFormatMeta {
@@ -99,6 +100,8 @@ export interface BrandSettings {
   signature?: string; // how to sign posts
   // image style
   imageStyle?: ImageStyle;
+  // social handles (used on the carousel outro slide)
+  socials?: { instagram?: string; tiktok?: string; x?: string };
 }
 
 export const DEFAULT_BRAND: BrandSettings = {
@@ -121,6 +124,11 @@ export const DEFAULT_BRAND: BrandSettings = {
       "Diagram-heavy: boxes, arrows, simple icons explaining the concept step by step. Use WHITE text and shapes on the dark background, GRAY (#8A8A8A) angle brackets, and exactly ONE vivid blue (#2563EB) accent per visual. Wrap the main title in code brackets like <Title/>. Label key parts in BOTH English and Swahili, e.g. 'Input (Ingizo)'. Lots of whitespace, beginner-friendly. Optionally a small <DanfordChris/> wordmark in a corner.",
     avoid: "clutter, tiny unreadable text, gibberish text, watermarks, low contrast",
   },
+  socials: {
+    instagram: "codewithdanfordchris",
+    tiktok: "codewithdanfordchris",
+    x: "codewithdanfordchris",
+  },
 };
 
 /** Merge saved settings over the brand defaults (so your brand applies even
@@ -130,6 +138,7 @@ export function effectiveBrand(saved?: BrandSettings): BrandSettings {
     ...DEFAULT_BRAND,
     ...(saved ?? {}),
     imageStyle: { ...DEFAULT_BRAND.imageStyle, ...(saved?.imageStyle ?? {}) },
+    socials: { ...DEFAULT_BRAND.socials, ...(saved?.socials ?? {}) },
   };
 }
 
