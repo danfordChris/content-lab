@@ -230,20 +230,22 @@ async function openaiImage(prompt: string): Promise<string> {
   throw new Error("No image returned");
 }
 
+// FLUX is only ever used for DECORATIVE art now — diffusion models garble text,
+// so the prompt forbids any lettering. All text-bearing visuals are code-rendered.
 function brandImagePrompt(p: string, brand?: BrandSettings): string {
   const s = brand?.imageStyle ?? {};
   const aesthetic = s.aesthetic || "clean, modern, minimal developer aesthetic";
-  const bg = s.background || "dark background (#09090b)";
+  const bg = s.background || "deep near-black background (#0A0A0A)";
   const colors =
-    [s.primaryColor, s.accentColor].filter(Boolean).join(" and ") || "neon-green/cyan accents";
-  const font = s.fontStyle || "bold sans-serif typography";
-  const mood = s.mood || "high contrast, tech/code motif";
-  const extra = s.extra ? `\n${s.extra}` : "";
-  const avoid = `\nAvoid: ${s.avoid || "watermarks"}.`;
+    [s.primaryColor, s.accentColor].filter(Boolean).join(" and ") || "white with a vivid blue accent";
+  const mood = s.mood || "sleek, high contrast, tech motif";
   return `${p}
 
-Style: ${aesthetic}. ${bg}. Colors: ${colors}. ${font}. ${mood}.${extra}${avoid}
-Square composition suitable for a social media slide.`;
+Style: ${aesthetic}. ${bg}. Colors: ${colors}. ${mood}.
+Abstract / decorative illustration only.
+Absolutely NO text, NO words, NO letters, NO numbers, NO labels anywhere in the image.
+Avoid: ${s.avoid || "watermarks"}, any lettering or typography.
+Square composition.`;
 }
 
 function contentTypeFor(ext: string): string {
@@ -284,15 +286,16 @@ async function placeholderImage(label: string, prompt: string): Promise<string> 
   return `/generated/${name}`;
 }
 
-// ── Smart visual: auto-decide diagram (SVG) vs decorative image (FLUX) ───────
-export type Visual = { url: string; kind: "diagram" | "image" | "placeholder"; error?: string };
+// ── Smart visual: structured diagram spec + deterministic rendering ──────────
+export type Visual = { url: string; kind: "diagram" | "image" | "card" | "placeholder"; error?: string };
 
 /**
  * Looks at the content and automatically builds the right visual:
- *  - explanatory (concept/process/architecture/steps/comparison) → a real,
- *    labeled SVG diagram (crisp text, English + Swahili) in the brand colors.
- *  - decorative/cover/mood → a FLUX image.
- * Falls back to a plain image, then a placeholder, so it never hard-fails.
+ *  - explanatory (process/steps/comparison) → the AI returns a STRUCTURED spec
+ *    (title, steps, EN+SW labels) and the layout is rendered DETERMINISTICALLY
+ *    in code — text is always real, aligned, and on-brand.
+ *  - decorative/cover/mood → a FLUX image, forced to contain NO text at all.
+ *  - anything failing → a branded title card (never an ugly placeholder).
  */
 export async function generateVisual(
   prompt: string,
@@ -302,66 +305,222 @@ export async function generateVisual(
   if (aiEnabled) {
     try {
       const d = await decideVisual(prompt, brand);
-      if (d.type === "diagram" && d.svg) {
-        const svg = sanitizeSvg(d.svg);
-        if (svg.startsWith("<svg")) {
+      if (d.type === "diagram" && d.diagram) {
+        try {
+          const svg = renderDiagramSvg(normalizeDiagram(d.diagram), brand);
           return { url: await saveImage(Buffer.from(svg, "utf8"), "svg"), kind: "diagram" };
+        } catch (e) {
+          console.error("visual: diagram render failed →", e);
         }
       }
-      const img = await generateImage(d.imagePrompt || prompt, label, brand);
-      return { url: img.url, kind: img.placeholder ? "placeholder" : "image", error: img.error };
-    } catch {
-      /* fall through to a plain image */
+      if (d.type === "image" && d.imagePrompt) {
+        const img = await generateImage(d.imagePrompt, label, brand);
+        if (!img.placeholder) return { url: img.url, kind: "image" };
+        if (img.error) console.error("visual: image failed →", img.error);
+      }
+    } catch (e) {
+      console.error("visual: decide failed →", e);
     }
   }
-  const img = await generateImage(prompt, label, brand);
-  return { url: img.url, kind: img.placeholder ? "placeholder" : "image", error: img.error };
+  // Deterministic branded card — always readable, always on-brand.
+  try {
+    return { url: await renderSlideCard(prompt.slice(0, 160), 0, 1, brand), kind: "card" };
+  } catch {
+    const img = await generateImage(prompt, label, brand);
+    return { url: img.url, kind: img.placeholder ? "placeholder" : "image", error: img.error };
+  }
 }
+
+type DiagramSpec = {
+  kind: "flow" | "compare";
+  title: string;
+  steps?: { label: string; sub?: string }[];
+  left?: { title: string; items: string[] };
+  right?: { title: string; items: string[] };
+};
 
 async function decideVisual(
   prompt: string,
   brand?: BrandSettings
-): Promise<{ type: string; svg?: string; imagePrompt?: string }> {
-  const s = brand?.imageStyle ?? {};
-  const bg = s.background || "white";
-  const primary = s.primaryColor || "black";
-  const accent = s.accentColor || "blue";
-  const ask = `You are an infographic designer. Choose the best way to illustrate the content, then BUILD it.
+): Promise<{ type: string; diagram?: any; imagePrompt?: string }> {
+  const ask = `Decide the best visual for this content and return STRICT JSON only.
 
-If it explains a concept, process, steps, architecture, comparison, or how something works → type "diagram".
-Produce a COMPLETE, valid, standalone SVG infographic:
-- Root: <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">.
-- Background ${bg}; primary/text color ${primary}; accent/highlight ${accent}.
-- Real, readable labels. Where useful, label key parts in English AND Swahili, e.g. "Input (Ingizo)".
-- Boxes, arrows, simple icons, a clear title. Large legible sans-serif. Lots of whitespace. Beginner-friendly.
-- Only shapes and <text>. No <script>, no foreignObject, no external/embedded images. Keep it concise.
+Rules:
+- If it explains a process, steps, pipeline, architecture, or how something works:
+  {"type":"diagram","diagram":{"kind":"flow","title":"Short English title (Swahili title)","steps":[{"label":"step in English, max 8 words","sub":"Swahili translation"}]}}
+  Use 3 to 6 steps.
+- If it contrasts/compares two things:
+  {"type":"diagram","diagram":{"kind":"compare","title":"Short title","left":{"title":"Option A","items":["2-5 short points"]},"right":{"title":"Option B","items":["2-5 short points"]}}}
+- Otherwise (mood / cover / decorative):
+  {"type":"image","imagePrompt":"short abstract visual scene, decorative, MUST contain no text or lettering"}
 
-Otherwise (decorative / cover / mood) → type "image" with a short imagePrompt.
-
-Return STRICT JSON: {"type":"diagram"|"image","svg":"<svg ...>...</svg>","imagePrompt":"..."} — include only the field you need.
+Every label must be short, concrete, plain language a non-technical person understands.
+Bilingual: label in English, sub in Swahili.
 <user_content>${prompt}</user_content>`;
   const parsed = parseJson(await chat(ask, true, buildSystem(brand)));
   return {
     type: String(parsed.type || "image"),
-    svg: parsed.svg ? String(parsed.svg) : undefined,
+    diagram: parsed.diagram,
     imagePrompt: parsed.imagePrompt ? String(parsed.imagePrompt) : undefined,
   };
 }
 
-/** Keep only the <svg>…</svg>, strip code fences, scripts and event handlers. */
-function sanitizeSvg(svg: string): string {
-  let s = svg
-    .trim()
-    .replace(/^```(?:svg|xml|html)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  const start = s.indexOf("<svg");
-  const end = s.lastIndexOf("</svg>");
-  if (start >= 0 && end >= 0) s = s.slice(start, end + 6);
-  return s
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, "");
+/** Validate + clamp the AI's diagram spec; throws if unusable (caller falls back). */
+function normalizeDiagram(d: any): DiagramSpec {
+  const spec: DiagramSpec = {
+    kind: d?.kind === "compare" ? "compare" : "flow",
+    title: String(d?.title ?? "").slice(0, 120) || "Diagram",
+  };
+  if (spec.kind === "flow") {
+    spec.steps = (Array.isArray(d?.steps) ? d.steps : [])
+      .map((s: any) => ({
+        label: String(s?.label ?? "").slice(0, 90),
+        sub: s?.sub ? String(s.sub).slice(0, 90) : undefined,
+      }))
+      .filter((s: { label: string }) => s.label)
+      .slice(0, 6);
+    if ((spec.steps?.length ?? 0) < 2) throw new Error("flow needs >=2 steps");
+  } else {
+    const col = (c: any) => ({
+      title: String(c?.title ?? "").slice(0, 60) || "—",
+      items: (Array.isArray(c?.items) ? c.items : [])
+        .map((x: any) => String(x).slice(0, 80))
+        .filter(Boolean)
+        .slice(0, 6),
+    });
+    spec.left = col(d?.left);
+    spec.right = col(d?.right);
+    if (!spec.left.items.length || !spec.right.items.length) throw new Error("compare needs items");
+  }
+  return spec;
+}
+
+/** Deterministic, branded diagram renderer — real text, perfect layout, every time. */
+function renderDiagramSvg(spec: DiagramSpec, brand?: BrandSettings): string {
+  const W = 1080;
+  const H = 1080;
+  const pad = 80;
+  const st = brand?.imageStyle ?? {};
+  const bg = pickHex(st.background, "#0A0A0A");
+  const fg = pickHex(st.primaryColor, "#FFFFFF");
+  const accent = pickHex(st.accentColor, "#2563EB");
+  const gray = "#8A8A8A";
+  const mono = "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace";
+  const sans = "ui-sans-serif, -apple-system, 'Segoe UI', sans-serif";
+
+  const parts: string[] = [];
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}"/>`);
+  parts.push(
+    `<text x="${pad}" y="104" font-family="${mono}" font-size="32"><tspan fill="${gray}">&lt;</tspan><tspan fill="${fg}">Danford</tspan><tspan fill="${accent}">Chris</tspan><tspan fill="${gray}">/&gt;</tspan></text>`
+  );
+  parts.push(`<rect x="${pad}" y="138" width="84" height="7" rx="3.5" fill="${accent}"/>`);
+
+  const titleFs = 40;
+  const titleLines = wrapText(spec.title, Math.floor((W - pad * 2) / (titleFs * 0.55))).slice(0, 2);
+  titleLines.forEach((ln, i) =>
+    parts.push(
+      `<text x="${pad}" y="${206 + i * 52}" fill="${fg}" font-family="${sans}" font-size="${titleFs}" font-weight="700">${escapeXml(ln)}</text>`
+    )
+  );
+  const contentTop = 206 + titleLines.length * 52 + 26;
+
+  if (spec.kind === "compare" && spec.left && spec.right) {
+    const gapX = 56;
+    const colW = (W - pad * 2 - gapX) / 2;
+    const headH = 76;
+    const cols = [
+      { x: pad, c: spec.left },
+      { x: pad + colW + gapX, c: spec.right },
+    ];
+    for (const { x, c } of cols) {
+      parts.push(
+        `<rect x="${x}" y="${contentTop}" width="${colW}" height="${headH}" rx="14" fill="none" stroke="${accent}" stroke-width="3"/>`
+      );
+      const ht = wrapText(c.title, Math.floor((colW - 32) / (26 * 0.55)))[0] ?? "";
+      parts.push(
+        `<text x="${x + colW / 2}" y="${contentTop + headH / 2 + 9}" text-anchor="middle" fill="${fg}" font-family="${sans}" font-size="26" font-weight="700">${escapeXml(ht)}</text>`
+      );
+      let y = contentTop + headH + 48;
+      for (const item of c.items) {
+        const lines = wrapText(item, Math.floor((colW - 56) / (23 * 0.55))).slice(0, 2);
+        parts.push(`<text x="${x + 8}" y="${y}" fill="${accent}" font-family="${sans}" font-size="23">▸</text>`);
+        lines.forEach((ln, li) =>
+          parts.push(
+            `<text x="${x + 36}" y="${y + li * 30}" fill="${fg}" font-family="${sans}" font-size="23">${escapeXml(ln)}</text>`
+          )
+        );
+        y += lines.length * 30 + 18;
+      }
+    }
+    parts.push(`<circle cx="${W / 2}" cy="${contentTop + headH / 2}" r="30" fill="${accent}"/>`);
+    parts.push(
+      `<text x="${W / 2}" y="${contentTop + headH / 2 + 8}" text-anchor="middle" fill="#ffffff" font-family="${sans}" font-size="22" font-weight="700">vs</text>`
+    );
+  } else {
+    const steps = spec.steps ?? [];
+    const footer = 60;
+    const avail = H - contentTop - footer;
+    const arrowH = 44;
+    let labelFs = 30;
+    let subFs = 21;
+    const measure = (fs: number, sfs: number) =>
+      steps.map((s) => {
+        const lines = wrapText(s.label, Math.floor((W - pad * 2 - 150) / (fs * 0.55))).slice(0, 2);
+        const subLines = s.sub
+          ? wrapText(s.sub, Math.floor((W - pad * 2 - 150) / (sfs * 0.55))).slice(0, 1)
+          : [];
+        const h = Math.max(36 + lines.length * (fs * 1.25) + (subLines.length ? sfs * 1.3 + 8 : 0), 84);
+        return { lines, subLines, h };
+      });
+    let boxes = measure(labelFs, subFs);
+    let total = boxes.reduce((a, b) => a + b.h, 0) + (steps.length - 1) * arrowH;
+    while (total > avail && labelFs > 22) {
+      labelFs -= 2;
+      subFs = Math.max(16, subFs - 1);
+      boxes = measure(labelFs, subFs);
+      total = boxes.reduce((a, b) => a + b.h, 0) + (steps.length - 1) * arrowH;
+    }
+    let y = contentTop + Math.max(0, (avail - total) / 2);
+    boxes.forEach((b, i) => {
+      const x = pad;
+      const w = W - pad * 2;
+      parts.push(
+        `<rect x="${x}" y="${y.toFixed(0)}" width="${w}" height="${b.h.toFixed(0)}" rx="14" fill="#101014" stroke="#2a2a30" stroke-width="2"/>`
+      );
+      parts.push(`<circle cx="${x + 52}" cy="${(y + b.h / 2).toFixed(0)}" r="24" fill="${accent}"/>`);
+      parts.push(
+        `<text x="${x + 52}" y="${(y + b.h / 2 + 8).toFixed(0)}" text-anchor="middle" fill="#ffffff" font-family="${sans}" font-size="22" font-weight="700">${i + 1}</text>`
+      );
+      const textX = x + 100;
+      const blockH = b.lines.length * labelFs * 1.25 + (b.subLines.length ? subFs * 1.3 + 8 : 0);
+      let ty = y + (b.h - blockH) / 2 + labelFs * 0.9;
+      b.lines.forEach((ln) => {
+        parts.push(
+          `<text x="${textX}" y="${ty.toFixed(0)}" fill="${fg}" font-family="${sans}" font-size="${labelFs}" font-weight="700">${escapeXml(ln)}</text>`
+        );
+        ty += labelFs * 1.25;
+      });
+      b.subLines.forEach((ln) => {
+        ty += 4;
+        parts.push(
+          `<text x="${textX}" y="${ty.toFixed(0)}" fill="${gray}" font-family="${sans}" font-size="${subFs}">${escapeXml(ln)}</text>`
+        );
+      });
+      if (i < boxes.length - 1) {
+        const cx = W / 2;
+        const ay1 = y + b.h + 6;
+        const ay2 = y + b.h + arrowH - 10;
+        parts.push(
+          `<line x1="${cx}" y1="${ay1.toFixed(0)}" x2="${cx}" y2="${ay2.toFixed(0)}" stroke="${accent}" stroke-width="3.5"/>`
+        );
+        parts.push(
+          `<polygon points="${cx - 9},${ay2.toFixed(0)} ${cx + 9},${ay2.toFixed(0)} ${cx},${(ay2 + 11).toFixed(0)}" fill="${accent}"/>`
+        );
+      }
+      y += b.h + arrowH;
+    });
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n${parts.join("\n")}\n</svg>`;
 }
 
 // ── Carousel slide cards (deterministic, on-brand, guaranteed readable) ──────

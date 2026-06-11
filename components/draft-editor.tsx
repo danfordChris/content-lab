@@ -164,7 +164,9 @@ function CoverImage({ draft }: { draft: Draft }) {
             : "Placeholder — configure an image provider"
           : r.kind === "diagram"
             ? "Diagram generated ✓"
-            : "Image generated ✓"
+            : r.kind === "card"
+              ? "Branded card generated ✓"
+              : "Image generated ✓"
       );
       router.refresh();
     });
