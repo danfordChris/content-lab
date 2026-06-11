@@ -883,10 +883,7 @@ function renderOutroSvg(index: number, total: number, brand?: BrandSettings, ava
   );
   parts.push(`<rect x="${SLIDE_W / 2 - 70}" y="470" width="140" height="8" rx="4" fill="${c.accent}"/>`);
   parts.push(
-    `<text x="${SLIDE_W / 2}" y="580" text-anchor="middle" fill="#FFFFFF" font-family="${SANS}" font-size="46" font-weight="800">Follow for more</text>`
-  );
-  parts.push(
-    `<text x="${SLIDE_W / 2}" y="628" text-anchor="middle" fill="#9AA3B2" font-family="${SERIF}" font-style="italic" font-size="30">(Nifuate kwa zaidi)</text>`
+    `<text x="${SLIDE_W / 2}" y="600" text-anchor="middle" fill="#FFFFFF" font-family="${SANS}" font-size="46" font-weight="800">Follow for more</text>`
   );
   let y = 740;
   const rowX = SLIDE_W / 2 - 210;
@@ -1006,7 +1003,7 @@ CONTENT RULES:
 - Every slide must teach something CONCRETE and SPECIFIC about THIS topic — a step, a
   code-level fact, an endpoint, a number, a pitfall. NEVER generic advice that could fit
   any topic. A reader should finish knowing HOW to do the thing.
-- Where it genuinely helps, add a short Swahili phrase in parentheses.
+- Write ALL slide text in ENGLISH ONLY. Do NOT use Swahili or any other language.
 - Do NOT include a follow/CTA slide — a branded outro page is appended automatically.
 <user_content>${brief}</user_content>`;
     // Quality model + no silent fallback: a failed carousel surfaces a real error.
@@ -1181,23 +1178,28 @@ function fallbackSlides(idea: Idea): CarouselSlide[] {
   return [
     { text: hook, layout: "cover", imagePrompt: `Bold cover slide titled "${t}"` },
     {
-      text: `The problem (Tatizo)\nEveryone explains ${t} in theory.\nAlmost nobody shows the working example.`,
+      text: `The problem\nEveryone explains ${t} in theory.\nAlmost nobody shows the working example.`,
+      layout: "text",
       imagePrompt: `Confused developer at a messy whiteboard`,
     },
     {
-      text: `Start small (Anza kidogo)\nBuild the smallest version that runs — about 30 lines.\nNo framework, no setup, just the core idea.`,
+      text: `Start small\nBuild the smallest version that runs — about 30 lines.\nNo framework, no setup, just the core idea.`,
+      layout: "text",
       imagePrompt: `A tiny code snippet on a dark terminal`,
     },
     {
       text: `Watch where it breaks\nThe break point is the real lesson, not the happy path.\nNote exactly what failed and why.`,
+      layout: "text",
       imagePrompt: `A red error log on screen`,
     },
     {
       text: `The hidden trade-off\nThe "advanced" approach often costs more than the problem it solves.\nMeasure before you upgrade.`,
+      layout: "text",
       imagePrompt: `A balance scale, simple vs complex`,
     },
     {
-      text: `In production: keep it boring\nBoring is debuggable, predictable, and cheap.\nBoring scales (Rahisi hukua).`,
+      text: `In production: keep it boring\nBoring is debuggable, predictable, and cheap.\nBoring scales.`,
+      layout: "text",
       imagePrompt: `A calm, clean architecture diagram`,
     },
   ];
