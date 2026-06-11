@@ -13,6 +13,8 @@
     "firebase:rules": "npx -y firebase-tools@latest deploy --only firestore:rules"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "@ffmpeg/util": "^0.12.1",
     "@vercel/blob": "^2.4.0",
     "firebase": "^11.3.0",
     "firebase-admin": "^13.1.0",

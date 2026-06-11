@@ -219,7 +219,24 @@ function CarouselEditor({ draft }: { draft: Draft }) {
   const [zipping, setZipping] = useState(false);
   const [genning, startGen] = useTransition();
   const [includeImages, setIncludeImages] = useState(false);
+  const [video, setVideo] = useState<string | null>(null);
   const withImages = slides.filter((s) => s.imageUrl).length;
+
+  async function downloadVideo() {
+    if (!withImages) {
+      toast.error("Generate the slides first");
+      return;
+    }
+    try {
+      const { exportCarouselMp4 } = await import("@/lib/video");
+      await exportCarouselMp4(slides, slugify(draft.title), (m) => setVideo(m));
+      toast.success("Video ready");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Video export failed");
+    } finally {
+      setVideo(null);
+    }
+  }
 
   function generateAll() {
     startGen(async () => {
@@ -308,8 +325,12 @@ function CarouselEditor({ draft }: { draft: Draft }) {
           <button onClick={downloadAll} disabled={zipping} className="btn btn-ghost text-xs py-1.5">
             {zipping ? "Zipping…" : "↓ Download all (zip)"}
           </button>
+          <button onClick={downloadVideo} disabled={!!video} className="btn btn-ghost text-xs py-1.5">
+            {video ? "Working…" : "↓ Video (MP4)"}
+          </button>
         </div>
       </div>
+      {video && <p className="text-xs text-zinc-500">🎬 {video}</p>}
       <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
         <input
           type="checkbox"
