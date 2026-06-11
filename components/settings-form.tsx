@@ -157,10 +157,16 @@ export function SettingsForm({ initial }: { initial: BrandSettings }) {
               onChange={(e) => set("role", e.target.value)} />
           </Field>
         </div>
-        <Field label="Avatar image URL" hint="square photo; blank = monogram circle">
-          <input className="input" value={b.avatarUrl ?? ""} placeholder="https://…/me.jpg"
-            onChange={(e) => set("avatarUrl", e.target.value)} />
-        </Field>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Field label="Logo image URL" hint="top-left brand mark; blank = <DanfordChris/> wordmark">
+            <input className="input" value={b.logoUrl ?? ""} placeholder="https://…/logo.png"
+              onChange={(e) => set("logoUrl", e.target.value)} />
+          </Field>
+          <Field label="Avatar image URL" hint="square photo; blank = monogram circle">
+            <input className="input" value={b.avatarUrl ?? ""} placeholder="https://…/me.jpg"
+              onChange={(e) => set("avatarUrl", e.target.value)} />
+          </Field>
+        </div>
       </section>
 
       {/* Socials + notifications */}

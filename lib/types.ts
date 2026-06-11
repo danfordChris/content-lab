@@ -115,6 +115,7 @@ export interface BrandSettings {
   displayName?: string;
   role?: string;
   avatarUrl?: string; // photo for the footer circle; blank = monogram
+  logoUrl?: string; // top-left brand logo image; blank = <DanfordChris/> wordmark
 }
 
 export const DEFAULT_BRAND: BrandSettings = {

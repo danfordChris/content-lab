@@ -604,20 +604,23 @@ export async function renderSlideCard(
   layout?: SlideLayout,
   bg?: string | null
 ): Promise<string> {
+  // Avatar + logo are fetched once and inlined as data URLs, the same image
+  // path used everywhere else so browser-side rasterization is never tainted.
   const avatar = await fetchAvatarDataUrl(brand?.avatarUrl);
+  const logo = await fetchAvatarDataUrl(brand?.logoUrl);
   const kind: SlideLayout = isOutro
     ? "outro"
     : (layout ?? (index === 0 ? "cover" : "text"));
   const svg =
     kind === "outro"
-      ? renderOutroSvg(index, total, brand, avatar)
+      ? renderOutroSvg(index, total, brand, avatar, logo)
       : kind === "cover"
-        ? renderCoverSvg(text, index, total, brand, avatar, bg)
+        ? renderCoverSvg(text, index, total, brand, avatar, bg, logo)
         : kind === "statement"
-          ? renderStatementSvg(text, index, total, brand, avatar, bg)
+          ? renderStatementSvg(text, index, total, brand, avatar, bg, logo)
           : kind === "stat"
-            ? renderStatSvg(text, index, total, brand, avatar)
-            : renderContentSlideSvg(text, index, total, brand, avatar);
+            ? renderStatSvg(text, index, total, brand, avatar, logo)
+            : renderContentSlideSvg(text, index, total, brand, avatar, logo);
   return saveImage(Buffer.from(svg, "utf8"), "svg");
 }
 
@@ -662,9 +665,10 @@ type Chrome = {
   name: string;
   role: string;
   avatar: string | null;
+  logo: string | null;
 };
 
-function chromeFor(brand?: BrandSettings, avatar?: string | null): Chrome {
+function chromeFor(brand?: BrandSettings, avatar?: string | null, logo?: string | null): Chrome {
   const st = brand?.imageStyle ?? {};
   return {
     accent: pickHex(st.accentColor, "#2563EB"),
@@ -674,6 +678,7 @@ function chromeFor(brand?: BrandSettings, avatar?: string | null): Chrome {
     name: brand?.displayName || DEFAULT_BRAND.displayName || "Danford Chris",
     role: brand?.role || DEFAULT_BRAND.role || "",
     avatar: avatar ?? null,
+    logo: logo ?? null,
   };
 }
 
@@ -706,14 +711,19 @@ function pageFrame(
   const texOp = opts.dark ? 0.04 : 0.05;
   const showArrow = opts.showArrow ?? true;
 
-  // Top-left brand: an avatar photo if provided, otherwise the <DanfordChris/> wordmark.
+  // Top-left brand: a custom logo if set, else an avatar photo, else the
+  // <DanfordChris/> wordmark (the default). The logo keeps its aspect ratio,
+  // left-aligned in a 380×60 box so wide wordmarks and square marks both fit.
   const aX = SLIDE_PAD + 28;
   const aY = 90;
-  const brand = c.avatar
-    ? `<clipPath id="av${index}"><circle cx="${aX}" cy="${aY}" r="28"/></clipPath>
+  const wordmark = `<text x="${SLIDE_PAD}" y="102" font-family="${MONO_FONT}" font-size="30" font-weight="700"><tspan fill="#8A8A8A">&lt;</tspan><tspan fill="${nameColor}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="#8A8A8A">/&gt;</tspan></text>`;
+  const brand = c.logo
+    ? `<image href="${c.logo}" x="${SLIDE_PAD}" y="60" width="380" height="60" preserveAspectRatio="xMinYMid meet"/>`
+    : c.avatar
+      ? `<clipPath id="av${index}"><circle cx="${aX}" cy="${aY}" r="28"/></clipPath>
   <image href="${c.avatar}" x="${aX - 28}" y="${aY - 28}" width="56" height="56" preserveAspectRatio="xMidYMid slice" clip-path="url(#av${index})"/>
   <circle cx="${aX}" cy="${aY}" r="28" fill="none" stroke="${c.accent}" stroke-width="3"/>`
-    : `<text x="${SLIDE_PAD}" y="102" font-family="${MONO_FONT}" font-size="30" font-weight="700"><tspan fill="#8A8A8A">&lt;</tspan><tspan fill="${nameColor}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="#8A8A8A">/&gt;</tspan></text>`;
+      : wordmark;
 
   const arrow = showArrow
     ? `<g stroke="${opts.dark ? "#FFFFFF" : c.ink}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -741,8 +751,8 @@ function pageFrame(
 }
 
 /** COVER — dark, huge caps headline + blue serif kicker (optional bg image). */
-function renderCoverSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null, bg?: string | null): string {
-  const c = chromeFor(brand, avatar);
+function renderCoverSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null, bg?: string | null, logo?: string | null): string {
+  const c = chromeFor(brand, avatar, logo);
   const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   const headline = (paras[0] ?? "").toUpperCase();
   const kicker = paras[1] ?? "";
@@ -775,8 +785,8 @@ function renderCoverSvg(text: string, index: number, total: number, brand?: Bran
 }
 
 /** TEXT — light editorial page: navy heading + serif body, arrow bullets / numbered steps. */
-function renderContentSlideSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
-  const c = chromeFor(brand, avatar);
+function renderContentSlideSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null, logo?: string | null): string {
+  const c = chromeFor(brand, avatar, logo);
   const top = 230;
   const bot = 150;
   const avail = SLIDE_H - top - bot;
@@ -837,8 +847,8 @@ function renderContentSlideSvg(text: string, index: number, total: number, brand
 }
 
 /** STATEMENT — dark, one huge centered line (+ optional quiet sub-line, optional bg). */
-function renderStatementSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null, bg?: string | null): string {
-  const c = chromeFor(brand, avatar);
+function renderStatementSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null, bg?: string | null, logo?: string | null): string {
+  const c = chromeFor(brand, avatar, logo);
   const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   const main = paras[0] ?? "";
   const sub = paras.slice(1).join(" ");
@@ -870,8 +880,8 @@ function renderStatementSvg(text: string, index: number, total: number, brand?: 
 }
 
 /** STAT — dark, massive blue number + white caption. */
-function renderStatSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
-  const c = chromeFor(brand, avatar);
+function renderStatSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null, logo?: string | null): string {
+  const c = chromeFor(brand, avatar, logo);
   const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   const big = paras[0] ?? "";
   const caption = paras.slice(1).join(" ");
@@ -902,8 +912,8 @@ function socialIcon(name: "instagram" | "tiktok" | "x", cx: number, cy: number, 
 }
 
 /** OUTRO — dark info page: wordmark, follow CTA, real social icons + handles. */
-function renderOutroSvg(index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
-  const c = chromeFor(brand, avatar);
+function renderOutroSvg(index: number, total: number, brand?: BrandSettings, avatar?: string | null, logo?: string | null): string {
+  const c = chromeFor(brand, avatar, logo);
   const socials = { ...DEFAULT_BRAND.socials, ...(brand?.socials ?? {}) };
   const rows = (
     [
