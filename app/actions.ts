@@ -9,6 +9,8 @@ import {
   generateImage,
   generateVisual,
   renderSlideCard,
+  generateBgDataUrl,
+  slideWantsBg,
   generateIdeas,
   friendlyAiError,
 } from "@/lib/ai";
@@ -165,50 +167,59 @@ export async function saveDraft(
 /** Generate an image for one carousel slide. */
 export async function generateSlideImageAction(
   draftId: string,
-  slideIndex: number
+  slideIndex: number,
+  includeImages = false
 ): Promise<{ ok: boolean; kind: string; placeholder: boolean; error?: string }> {
   const db = await readDB();
   const draft = db.drafts.find((x) => x.id === draftId);
   const slide = draft?.formatMeta?.slides?.[slideIndex];
   if (!draft || !slide) throw new Error("Slide not found");
+  const brand = effectiveBrand(db.settings);
 
-  // Carousel slides are rendered as branded SVG cards with the REAL slide text
-  // (always readable + on-brand), not drawn by an image model.
+  // Carousel slides are branded SVG cards with REAL text. With "include images",
+  // dramatic slides (cover/statement) also get an Apple-style AI background.
+  let bg: string | null = null;
+  if (includeImages && slideWantsBg(slide.layout, slideIndex)) {
+    bg = await generateBgDataUrl(`${draft.title} — ${slide.text.split("\n")[0]}`, brand);
+  }
   const total = draft.formatMeta?.slides?.length ?? 1;
-  const url = await renderSlideCard(
-    slide.text,
-    slideIndex,
-    total,
-    effectiveBrand(db.settings),
-    slide.isOutro,
-    slide.layout
-  );
+  const url = await renderSlideCard(slide.text, slideIndex, total, brand, slide.isOutro, slide.layout, bg);
   await mutate((d) => {
     const s = d.drafts.find((x) => x.id === draftId)?.formatMeta?.slides?.[slideIndex];
     if (s) s.imageUrl = url;
   });
   revalidatePath(`/drafts/${draftId}`);
-  return { ok: true, kind: "slide", placeholder: false };
+  return { ok: true, kind: bg ? "image" : "slide", placeholder: false };
 }
 
-/** Render branded SVG cards for ALL slides of a carousel in one go. */
+/** Render branded SVG cards for ALL slides of a carousel in one go.
+ *  With includeImages, dramatic slides also get an Apple-style AI background. */
 export async function generateAllSlidesAction(
-  draftId: string
-): Promise<{ ok: boolean; count: number }> {
+  draftId: string,
+  includeImages = false
+): Promise<{ ok: boolean; count: number; images: number }> {
   const db = await readDB();
   const draft = db.drafts.find((x) => x.id === draftId);
   const slides = draft?.formatMeta?.slides;
   if (!draft || !slides?.length) throw new Error("No slides");
   const brand = effectiveBrand(db.settings);
+  let images = 0;
   const urls = await Promise.all(
-    slides.map((s, i) => renderSlideCard(s.text, i, slides.length, brand, s.isOutro, s.layout))
+    slides.map(async (s, i) => {
+      let bg: string | null = null;
+      if (includeImages && slideWantsBg(s.layout, i)) {
+        bg = await generateBgDataUrl(`${draft.title} — ${s.text.split("\n")[0]}`, brand);
+        if (bg) images++;
+      }
+      return renderSlideCard(s.text, i, slides.length, brand, s.isOutro, s.layout, bg);
+    })
   );
   await mutate((d) => {
     const ss = d.drafts.find((x) => x.id === draftId)?.formatMeta?.slides;
     if (ss) urls.forEach((u, i) => ss[i] && (ss[i].imageUrl = u));
   });
   revalidatePath(`/drafts/${draftId}`);
-  return { ok: true, count: urls.length };
+  return { ok: true, count: urls.length, images };
 }
 
 /** Generate a single cover/visual image for any draft. */

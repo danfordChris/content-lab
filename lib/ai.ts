@@ -176,6 +176,30 @@ export async function generateImage(
   };
 }
 
+/** Generate a decorative (textless) background image, returned as a data URL so it
+ *  can be inlined into a slide SVG (avoids canvas taint on client rasterization). */
+export async function generateBgDataUrl(prompt: string, brand?: BrandSettings): Promise<string | null> {
+  const r = await generateImage(
+    `${prompt}. Cinematic, abstract, atmospheric, dramatic moody lighting, premium`,
+    "bg",
+    brand
+  );
+  if (r.placeholder) return null;
+  try {
+    if (/^https?:/i.test(r.url)) {
+      const res = await fetch(r.url);
+      const mime = res.headers.get("content-type") || "image/jpeg";
+      return `data:${mime};base64,${Buffer.from(await res.arrayBuffer()).toString("base64")}`;
+    }
+    const name = r.url.replace(/^\/generated\//, "");
+    const bytes = await fs.readFile(path.join(IMG_DIR, name));
+    const mime = name.endsWith(".png") ? "image/png" : "image/jpeg";
+    return `data:${mime};base64,${bytes.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Free image generation via Cloudflare Workers AI (FLUX-1-schnell). No card needed. */
 async function cloudflareImage(prompt: string): Promise<string> {
   const acct = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -577,7 +601,8 @@ export async function renderSlideCard(
   total: number,
   brand?: BrandSettings,
   isOutro = false,
-  layout?: SlideLayout
+  layout?: SlideLayout,
+  bg?: string | null
 ): Promise<string> {
   const avatar = await fetchAvatarDataUrl(brand?.avatarUrl);
   const kind: SlideLayout = isOutro
@@ -587,13 +612,19 @@ export async function renderSlideCard(
     kind === "outro"
       ? renderOutroSvg(index, total, brand, avatar)
       : kind === "cover"
-        ? renderCoverSvg(text, index, total, brand, avatar)
+        ? renderCoverSvg(text, index, total, brand, avatar, bg)
         : kind === "statement"
-          ? renderStatementSvg(text, index, total, brand, avatar)
+          ? renderStatementSvg(text, index, total, brand, avatar, bg)
           : kind === "stat"
             ? renderStatSvg(text, index, total, brand, avatar)
             : renderContentSlideSvg(text, index, total, brand, avatar);
   return saveImage(Buffer.from(svg, "utf8"), "svg");
+}
+
+/** Layouts that get an Apple-style background image when the user opts in. */
+export function slideWantsBg(layout?: SlideLayout, index = 0): boolean {
+  const k = layout ?? (index === 0 ? "cover" : "text");
+  return k === "cover" || k === "statement";
 }
 
 // Avatar photos are fetched once and inlined as data URLs (so browser-side
@@ -660,9 +691,14 @@ function pageFrame(
   c: Chrome,
   index: number,
   total: number,
-  opts: { dark: boolean; body: string; showArrow?: boolean }
+  opts: { dark: boolean; body: string; showArrow?: boolean; bgImage?: string | null }
 ): string {
   const bg = opts.dark ? c.darkBg : c.lightBg;
+  const backdrop = opts.bgImage
+    ? `<image href="${opts.bgImage}" x="0" y="0" width="${SLIDE_W}" height="${SLIDE_H}" preserveAspectRatio="xMidYMid slice"/>
+  <rect width="${SLIDE_W}" height="${SLIDE_H}" fill="#0A0A0A" opacity="0.6"/>
+  <rect width="${SLIDE_W}" height="${SLIDE_H}" fill="url(#scrim${index})"/>`
+    : `<rect width="${SLIDE_W}" height="${SLIDE_H}" fill="${bg}"/>`;
   const nameColor = opts.dark ? "#FFFFFF" : c.ink;
   const roleColor = opts.dark ? "#9AA3B2" : "#5B6B8A";
   const lineColor = opts.dark ? "rgba(255,255,255,0.18)" : "rgba(22,33,62,0.18)";
@@ -670,15 +706,14 @@ function pageFrame(
   const texOp = opts.dark ? 0.04 : 0.05;
   const showArrow = opts.showArrow ?? true;
 
-  // Avatar (photo clip or monogram circle).
+  // Footer brand: an avatar photo if provided, otherwise the <DanfordChris/> wordmark.
   const aX = SLIDE_PAD + 28;
   const aY = SLIDE_H - 78;
   const avatar = c.avatar
     ? `<clipPath id="av${index}"><circle cx="${aX}" cy="${aY}" r="28"/></clipPath>
   <image href="${c.avatar}" x="${aX - 28}" y="${aY - 28}" width="56" height="56" preserveAspectRatio="xMidYMid slice" clip-path="url(#av${index})"/>
   <circle cx="${aX}" cy="${aY}" r="28" fill="none" stroke="${c.accent}" stroke-width="3"/>`
-    : `<circle cx="${aX}" cy="${aY}" r="28" fill="${c.accent}"/>
-  <text x="${aX}" y="${aY + 9}" text-anchor="middle" fill="#fff" font-family="${SANS}" font-size="24" font-weight="700">${escapeXml(monogram(c.name))}</text>`;
+    : `<text x="${SLIDE_PAD}" y="${SLIDE_H - 66}" font-family="${MONO_FONT}" font-size="30" font-weight="700"><tspan fill="#8A8A8A">&lt;</tspan><tspan fill="${nameColor}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="#8A8A8A">/&gt;</tspan></text>`;
 
   const arrow = showArrow
     ? `<g stroke="${opts.dark ? "#FFFFFF" : c.ink}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -688,8 +723,9 @@ function pageFrame(
     : "";
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${SLIDE_W}" height="${SLIDE_H}" viewBox="0 0 ${SLIDE_W} ${SLIDE_H}">
-  <rect width="${SLIDE_W}" height="${SLIDE_H}" fill="${bg}"/>
-  <g fill="none" stroke="${texColor}" stroke-width="2" opacity="${texOp}">
+  <defs><linearGradient id="scrim${index}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0A0A0A" stop-opacity="0.55"/><stop offset="0.45" stop-color="#0A0A0A" stop-opacity="0.2"/><stop offset="1" stop-color="#0A0A0A" stop-opacity="0.85"/></linearGradient></defs>
+  ${backdrop}
+  <g fill="none" stroke="${texColor}" stroke-width="2" opacity="${opts.bgImage ? 0 : texOp}">
     <path d="M-100 300 Q 400 120 1180 360"/>
     <path d="M-100 760 Q 540 560 1180 820"/>
     <path d="M-100 1120 Q 480 980 1180 1180"/>
@@ -704,8 +740,8 @@ function pageFrame(
 </svg>`;
 }
 
-/** COVER — dark, huge caps headline + blue serif kicker. */
-function renderCoverSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
+/** COVER — dark, huge caps headline + blue serif kicker (optional bg image). */
+function renderCoverSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null, bg?: string | null): string {
   const c = chromeFor(brand, avatar);
   const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   const headline = (paras[0] ?? "").toUpperCase();
@@ -735,7 +771,7 @@ function renderCoverSvg(text: string, index: number, total: number, brand?: Bran
       y += 60;
     }
   }
-  return pageFrame(c, index, total, { dark: true, body: parts.join("\n  ") });
+  return pageFrame(c, index, total, { dark: true, body: parts.join("\n  "), bgImage: bg });
 }
 
 /** TEXT — light editorial page: navy heading + serif body, arrow bullets / numbered steps. */
@@ -800,8 +836,8 @@ function renderContentSlideSvg(text: string, index: number, total: number, brand
   return pageFrame(c, index, total, { dark: false, body: parts.join("\n  ") });
 }
 
-/** STATEMENT — dark, one huge centered line (+ optional quiet sub-line). */
-function renderStatementSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null): string {
+/** STATEMENT — dark, one huge centered line (+ optional quiet sub-line, optional bg). */
+function renderStatementSvg(text: string, index: number, total: number, brand?: BrandSettings, avatar?: string | null, bg?: string | null): string {
   const c = chromeFor(brand, avatar);
   const paras = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   const main = paras[0] ?? "";
@@ -830,7 +866,7 @@ function renderStatementSvg(text: string, index: number, total: number, brand?: 
       y += 50;
     }
   }
-  return pageFrame(c, index, total, { dark: true, body: parts.join("\n  ") });
+  return pageFrame(c, index, total, { dark: true, body: parts.join("\n  "), bgImage: bg });
 }
 
 /** STAT — dark, massive blue number + white caption. */

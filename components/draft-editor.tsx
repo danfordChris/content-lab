@@ -218,12 +218,20 @@ function CarouselEditor({ draft }: { draft: Draft }) {
   const slides = draft.formatMeta?.slides ?? [];
   const [zipping, setZipping] = useState(false);
   const [genning, startGen] = useTransition();
+  const [includeImages, setIncludeImages] = useState(false);
   const withImages = slides.filter((s) => s.imageUrl).length;
 
   function generateAll() {
     startGen(async () => {
-      const r = await generateAllSlidesAction(draft.id);
-      toast.success(`Designed ${r.count} slide${r.count === 1 ? "" : "s"}`);
+      try {
+        const r = await generateAllSlidesAction(draft.id, includeImages);
+        toast.success(
+          `Designed ${r.count} slide${r.count === 1 ? "" : "s"}` +
+            (r.images ? ` · ${r.images} with AI backgrounds` : "")
+        );
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't design slides");
+      }
       router.refresh();
     });
   }
@@ -289,11 +297,11 @@ function CarouselEditor({ draft }: { draft: Draft }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-zinc-500">
           {slides.length} slides · {withImages} with images
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button onClick={generateAll} disabled={genning} className="btn btn-primary text-xs py-1.5">
             {genning ? "Designing…" : "Generate all slides"}
           </button>
@@ -302,8 +310,26 @@ function CarouselEditor({ draft }: { draft: Draft }) {
           </button>
         </div>
       </div>
+      <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={includeImages}
+          onChange={(e) => setIncludeImages(e.target.checked)}
+          className="accent-[var(--accent)] w-4 h-4"
+        />
+        Include AI background images on the cover &amp; statement slides
+        <span className="text-zinc-600">(Apple-style; slower)</span>
+      </label>
       {slides.map((s, i) => (
-        <SlideCard key={i} draft={draft} index={i} text={s.text} imageUrl={s.imageUrl} imagePrompt={s.imagePrompt} />
+        <SlideCard
+          key={i}
+          draft={draft}
+          index={i}
+          text={s.text}
+          imageUrl={s.imageUrl}
+          imagePrompt={s.imagePrompt}
+          includeImages={includeImages}
+        />
       ))}
     </div>
   );
@@ -315,12 +341,14 @@ function SlideCard({
   text,
   imageUrl,
   imagePrompt,
+  includeImages,
 }: {
   draft: Draft;
   index: number;
   text: string;
   imageUrl?: string;
   imagePrompt?: string;
+  includeImages?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -330,7 +358,7 @@ function SlideCard({
   function genImage() {
     setNote(null);
     start(async () => {
-      const r = await generateSlideImageAction(draft.id, index);
+      const r = await generateSlideImageAction(draft.id, index, includeImages);
       setNote(
         r.placeholder
           ? r.error
