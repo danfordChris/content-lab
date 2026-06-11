@@ -706,14 +706,14 @@ function pageFrame(
   const texOp = opts.dark ? 0.04 : 0.05;
   const showArrow = opts.showArrow ?? true;
 
-  // Footer brand: an avatar photo if provided, otherwise the <DanfordChris/> wordmark.
+  // Top-left brand: an avatar photo if provided, otherwise the <DanfordChris/> wordmark.
   const aX = SLIDE_PAD + 28;
-  const aY = SLIDE_H - 78;
-  const avatar = c.avatar
+  const aY = 90;
+  const brand = c.avatar
     ? `<clipPath id="av${index}"><circle cx="${aX}" cy="${aY}" r="28"/></clipPath>
   <image href="${c.avatar}" x="${aX - 28}" y="${aY - 28}" width="56" height="56" preserveAspectRatio="xMidYMid slice" clip-path="url(#av${index})"/>
   <circle cx="${aX}" cy="${aY}" r="28" fill="none" stroke="${c.accent}" stroke-width="3"/>`
-    : `<text x="${SLIDE_PAD}" y="${SLIDE_H - 66}" font-family="${MONO_FONT}" font-size="30" font-weight="700"><tspan fill="#8A8A8A">&lt;</tspan><tspan fill="${nameColor}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="#8A8A8A">/&gt;</tspan></text>`;
+    : `<text x="${SLIDE_PAD}" y="102" font-family="${MONO_FONT}" font-size="30" font-weight="700"><tspan fill="#8A8A8A">&lt;</tspan><tspan fill="${nameColor}">Danford</tspan><tspan fill="${c.accent}">Chris</tspan><tspan fill="#8A8A8A">/&gt;</tspan></text>`;
 
   const arrow = showArrow
     ? `<g stroke="${opts.dark ? "#FFFFFF" : c.ink}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -730,12 +730,12 @@ function pageFrame(
     <path d="M-100 760 Q 540 560 1180 820"/>
     <path d="M-100 1120 Q 480 980 1180 1180"/>
   </g>
-  <text x="${SLIDE_PAD}" y="96" fill="${nameColor}" font-family="${SANS}" font-size="30" font-weight="700">${escapeXml(c.name)}</text>
-  ${c.role ? `<text x="${SLIDE_PAD}" y="130" fill="${roleColor}" font-family="${SERIF}" font-style="italic" font-size="23">${escapeXml(c.role)}</text>` : ""}
+  ${brand}
   <rect x="${SLIDE_W - SLIDE_PAD - 118}" y="64" width="118" height="44" rx="22" fill="none" stroke="${lineColor}" stroke-width="2"/>
   <text x="${SLIDE_W - SLIDE_PAD - 59}" y="92" text-anchor="middle" fill="${nameColor}" font-family="${MONO_FONT}" font-size="24">${String(index + 1).padStart(2, "0")}/${String(total).padStart(2, "0")}</text>
   ${opts.body}
-  ${avatar}
+  <text x="${SLIDE_PAD}" y="${SLIDE_H - 92}" fill="${nameColor}" font-family="${SANS}" font-size="30" font-weight="700">${escapeXml(c.name)}</text>
+  ${c.role ? `<text x="${SLIDE_PAD}" y="${SLIDE_H - 62}" fill="${roleColor}" font-family="${SERIF}" font-style="italic" font-size="23">${escapeXml(c.role)}</text>` : ""}
   ${arrow}
 </svg>`;
 }
