@@ -28,6 +28,7 @@ export function DraftEditor({ draft }: { draft: Draft }) {
   const [title, setTitle] = useState(draft.title);
   const [pending, start] = useTransition();
   const isCarousel = draft.platform === "carousel" && draft.formatMeta?.slides?.length;
+  const isShortForm = draft.platform === "instagram_reel" || draft.platform === "tiktok";
 
   function schedule() {
     const when = prompt("Schedule for (YYYY-MM-DD HH:MM)", defaultWhen());
@@ -97,6 +98,7 @@ export function DraftEditor({ draft }: { draft: Draft }) {
       ) : (
         <>
           <TextEditor draft={draft} />
+          {isShortForm && <ScriptKit draft={draft} />}
           <CoverImage draft={draft} />
         </>
       )}
@@ -148,6 +150,103 @@ function TextEditor({ draft }: { draft: Draft }) {
           {limit ? ` / ${limit}` : ""} chars · {saved ? "saved" : "saving…"}
         </span>
         {over && <span className="text-red-400">Over the {platformMeta(draft.platform).label} limit</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Short-form script kit (Instagram Reel / TikTok) ──────────────────────────
+// Split a generated script into the on-camera SCRIPT, the post CAPTION, and the
+// HASHTAGS, so each can be copied with one tap when you go to publish.
+function parseScriptParts(content: string): { script: string; caption: string; hashtags: string[] } {
+  const hashtags = Array.from(new Set((content.match(/#[\p{L}0-9_]+/gu) ?? []).map((h) => h.toLowerCase())));
+  // Find a "CAPTION" label (its own line, or inline like "CAPTION: ...").
+  const m = content.match(/^[ \t]*caption[ \t]*:?[ \t]*/im);
+  let script = content.trim();
+  let caption = "";
+  if (m && m.index !== undefined) {
+    script = content.slice(0, m.index).trim();
+    caption = content.slice(m.index + m[0].length).trim();
+  }
+  // Strip hashtags (shown separately) and any leftover label lines from the caption.
+  caption = caption
+    .replace(/#[\p{L}0-9_]+/gu, "")
+    .replace(/^[ \t]*(audio|sound)[ \t]*:.*$/gim, "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { script: script || content.trim(), caption, hashtags };
+}
+
+function CopyButton({ text, label, disabled }: { text: string; label: string; disabled?: boolean }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setDone(true);
+        toast.success(`${label} copied`);
+        setTimeout(() => setDone(false), 1500);
+      }}
+      disabled={disabled || !text.trim()}
+      className="btn btn-ghost text-xs py-1.5 disabled:opacity-40"
+    >
+      {done ? "Copied ✓" : `⧉ ${label}`}
+    </button>
+  );
+}
+
+function ScriptKit({ draft }: { draft: Draft }) {
+  const { script, caption, hashtags } = parseScriptParts(draft.content);
+  const label = platformMeta(draft.platform).label;
+  const hashtagStr = hashtags.join(" ");
+
+  return (
+    <div className="card p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-zinc-300">{label} publish kit</h3>
+        <CopyButton text={script} label="Script" />
+      </div>
+      <p className="text-xs text-zinc-500 -mt-1">
+        Read the script while filming, then paste the caption &amp; hashtags when you post. Edits in the
+        box above are reflected after they save.
+      </p>
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-zinc-400">Caption</span>
+          <CopyButton text={caption} label="Caption" />
+        </div>
+        {caption ? (
+          <p className="whitespace-pre-wrap rounded-lg border border-[var(--border)] bg-black/20 p-3 text-sm leading-relaxed">
+            {caption}
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-600 italic">
+            No caption block detected — regenerate the draft to get a {label} caption.
+          </p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-zinc-400">Hashtags · {hashtags.length}</span>
+          <div className="flex items-center gap-2">
+            <CopyButton text={hashtagStr} label="Hashtags" />
+            <CopyButton text={`${caption}${caption ? "\n\n" : ""}${hashtagStr}`.trim()} label="Caption + tags" />
+          </div>
+        </div>
+        {hashtags.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {hashtags.map((h) => (
+              <span key={h} className="chip text-xs" style={{ color: "var(--accent)", borderColor: "rgba(37,99,235,0.35)" }}>
+                {h}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-600 italic">No hashtags found in this draft.</p>
+        )}
       </div>
     </div>
   );
