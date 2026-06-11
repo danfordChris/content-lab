@@ -379,24 +379,30 @@ export async function suggestWeekAction(weekStartISO: string): Promise<WeekRow[]
   }
 
   // ONE batched AI call for all missing days (respects the free-tier rate limit).
+  // Each missing day carries a concrete AI-basics seed topic; generate an on-theme,
+  // platform-fit idea per seed in order.
   const missing = rows.filter((r) => r.source === "ai" && !r.title);
   if (missing.length) {
+    const seeds = missing
+      .map((m, i) => `${i + 1}) [${platformMeta(m.platform).label}] ${m.topic ?? m.pillar}`)
+      .join("\n");
     const generated = await generateIdeas({
-      topic: `One idea per pillar, in this exact order: ${missing.map((m) => m.pillar).join(", ")}. Make each idea fit its pillar.`,
+      topic: `This brand teaches the AI basics most people don't understand — Claude, ChatGPT, free "vibe coding" tools, building websites/web apps without code, and automating life with AI. Create ONE concrete, scroll-stopping post idea for EACH seed below, in this EXACT order, staying on that seed's topic and fitting its platform:\n${seeds}`,
       count: missing.length,
       avoidTitles: db.ideas.map((i) => i.title),
       brand,
     });
     missing.forEach((row, i) => {
-      // Prefer a generated idea matching the pillar; fall back to positional.
-      const match =
-        generated.find((g) => g.pillar === row.pillar && !rows.some((r) => r.title === g.title)) ??
-        generated[i];
+      // Seeds are ordered, so match positionally; fall back to any unused idea.
+      const match = generated[i] ?? generated.find((g) => !rows.some((r) => r.title === g.title));
       if (match) {
         row.title = match.title;
-        row.angle = match.angle;
+        row.angle = match.angle || row.topic;
       } else {
-        row.enabled = false;
+        // Keep the day usable even if the AI under-delivers — seed becomes the title.
+        row.title = row.topic ?? "";
+        row.angle = row.topic;
+        if (!row.title) row.enabled = false;
       }
     });
   }
@@ -422,7 +428,7 @@ export async function createWeekAction(
         idea = {
           id: uid(),
           title: row.title.trim(),
-          body: row.angle?.trim() || undefined,
+          body: row.angle?.trim() || row.topic?.trim() || undefined,
           pillar: row.pillar,
           status: "ready",
           createdAt: now(),

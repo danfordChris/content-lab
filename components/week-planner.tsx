@@ -78,10 +78,11 @@ export function WeekPlanner({ nextMonday, thisMonday }: { nextMonday: string; th
 
       {!rows && !suggesting && (
         <div className="card p-10 text-center">
-          <div className="text-zinc-400 text-base mb-1">Your week, one pillar a day</div>
+          <div className="text-zinc-400 text-base mb-1">A creative week of AI basics</div>
           <p className="text-sm text-zinc-600">
-            Mon Code Craft · Tue AI in Practice · Wed Dev Education · Thu Build in Public ·
-            Fri Social Education ⇄ Code × AI · Sat Simulations. Hit suggest to fill it.
+            Short-form scripts for LinkedIn, Instagram Reels &amp; TikTok — teaching the AI basics
+            most people miss: Claude vs ChatGPT, free vibe-coding tools, building sites &amp; apps
+            without code, and automating life with AI. Hit suggest to fill the week.
           </p>
         </div>
       )}

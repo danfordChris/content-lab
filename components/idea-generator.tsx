@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { generateIdeasAction, saveIdeasAction } from "@/app/actions";
 import { PillarBadge } from "@/components/badges";
-import { PILLARS, platformMeta, type GeneratedIdea, type Pillar, type Platform } from "@/lib/types";
+import { PILLARS, PLATFORMS, platformMeta, type GeneratedIdea, type Pillar, type Platform } from "@/lib/types";
 
-const PLATFORM_VALUES = ["linkedin", "x", "youtube_short", "video_script", "blog", "carousel"];
+const PLATFORM_VALUES: string[] = PLATFORMS.map((p) => p.value);
 
 export function IdeaGenerator() {
   const router = useRouter();

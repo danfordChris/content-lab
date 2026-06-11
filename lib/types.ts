@@ -10,6 +10,8 @@ export type Pillar =
 export type IdeaStatus = "spark" | "developing" | "ready" | "used" | "archived";
 export type Platform =
   | "linkedin"
+  | "instagram_reel"
+  | "tiktok"
   | "x"
   | "youtube_short"
   | "video_script"
@@ -177,6 +179,8 @@ export const PILLARS: { value: Pillar; label: string; color: string }[] = [
 
 export const PLATFORMS: { value: Platform; label: string; color: string; limit?: number }[] = [
   { value: "linkedin", label: "LinkedIn", color: "#0A66C2", limit: 3000 },
+  { value: "instagram_reel", label: "Instagram Reel", color: "#E1306C" },
+  { value: "tiktok", label: "TikTok", color: "#25F4EE" },
   { value: "x", label: "X / Twitter", color: "#e7e9ea", limit: 280 },
   { value: "youtube_short", label: "YouTube Short", color: "#FF0000" },
   { value: "video_script", label: "Video Script", color: "#f43f5e" },

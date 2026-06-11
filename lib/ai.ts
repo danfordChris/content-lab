@@ -985,8 +985,8 @@ export async function expandIdea(idea: Idea, brand?: BrandSettings): Promise<Exp
   const prompt = `Expand this raw idea into a content brief. Return STRICT JSON with keys:
 angle (string), audience (string), whyNow (string), outline (string[] of 4-6),
 hooks (string[] of exactly 3), suggestedPillar (one of: code_craft, ai_practice, code_x_ai,
-simulations, build_in_public, dev_education, social_education), suggestedFormats (string[] from: linkedin, x,
-youtube_short, video_script, blog, carousel), examples (string[] of 1-3 concrete real examples).
+simulations, build_in_public, dev_education, social_education), suggestedFormats (string[] from: linkedin,
+instagram_reel, tiktok, x, youtube_short, video_script, blog, carousel), examples (string[] of 1-3 concrete real examples).
 <user_content>TITLE: ${idea.title}
 NOTES: ${idea.body ?? "(none)"}</user_content>`;
   try {
@@ -1126,7 +1126,7 @@ Pillars: code_craft, ai_practice, code_x_ai, simulations, build_in_public, dev_e
 AI in daily life — great for bilingual English/Swahili posts.)
 Each idea must be a CONCRETE, scroll-stopping post title (a real post, not a topic category),
 a one-line angle/hook explaining what makes it interesting, the best pillar, and the best
-format (one of: linkedin, x, youtube_short, video_script, blog, carousel).
+format (one of: linkedin, instagram_reel, tiktok, x, youtube_short, video_script, blog, carousel).
 Make them practical, developer-focused, varied, and genuinely useful.
 Return STRICT JSON: {"ideas":[{"title":"...","angle":"...","pillar":"...","format":"..."}]}`;
 
@@ -1167,6 +1167,15 @@ function fallbackIdeas(pillar: string | undefined, count: number): GeneratedIdea
     { title: "Stop console.logging — try this instead", angle: "A faster debugging workflow.", pillar: "dev_education", format: "youtube_short" },
     { title: "How to spot a phishing message (Jinsi ya kutambua ujumbe wa ulaghai)", angle: "Five red flags anyone can check before clicking — bilingual, for everyone.", pillar: "social_education", format: "carousel" },
     { title: "What AI can and can't do — explained for your family", angle: "Plain-language truths about AI hype, in English and Swahili.", pillar: "social_education", format: "youtube_short" },
+    // ── AI basics most people don't understand (Claude · ChatGPT · vibe coding · automation) ──
+    { title: "Claude vs ChatGPT: which one should you actually use?", angle: "A plain-English comparison with real everyday examples — pick the right tool in 30 seconds.", pillar: "ai_practice", format: "instagram_reel" },
+    { title: "I built a website by just talking to a free AI", angle: "Screen-record vibe coding a real site with no code — show the prompt and the result.", pillar: "social_education", format: "tiktok" },
+    { title: "3 free AI tools that build apps for you", angle: "bolt.new, v0, and Claude artifacts — what each is best at, demoed fast.", pillar: "dev_education", format: "tiktok" },
+    { title: "Automate a boring daily task with ChatGPT in 10 minutes", angle: "No code: turn a repetitive chore into a one-click prompt or workflow.", pillar: "code_x_ai", format: "linkedin" },
+    { title: "Vibe coding: make an app without knowing how to code", angle: "Explain the whole idea simply, then show it happening on screen.", pillar: "social_education", format: "instagram_reel" },
+    { title: "5 things people get wrong about how ChatGPT really works", angle: "Bust the myths (it's not Google, it doesn't 'know' you) in quick beats.", pillar: "ai_practice", format: "instagram_reel" },
+    { title: "Turn a plain-English idea into a working web app with Claude", angle: "From sentence to shipped — the exact steps, no jargon.", pillar: "code_x_ai", format: "linkedin" },
+    { title: "Prompts you should be using in ChatGPT but aren't", angle: "The AI basics nobody teaches — copy-paste prompts that change everything.", pillar: "ai_practice", format: "tiktok" },
   ];
   const filtered = pillar ? pool.filter((i) => i.pillar === pillar) : pool;
   return (filtered.length ? filtered : pool).slice(0, count);
@@ -1176,7 +1185,30 @@ function fallbackIdeas(pillar: string | undefined, count: number): GeneratedIdea
 function platformRules(p: Platform): string {
   switch (p) {
     case "linkedin":
-      return "Constraints: 120-200 words. One hook line, whitespace between short lines, one takeaway, a soft question CTA. No links in body.";
+      return `Constraints: a scroll-stopping LinkedIn post, 130-220 words.
+- Line 1 is a HOOK that breaks a belief or names a pain ("You're using ChatGPT wrong." / "I built a website without writing a single line of code.") — under 12 words, no emoji.
+- Blank line, then one short line per idea (1-2 sentences each). Lots of whitespace.
+- Make it CONCRETE: name the tool, the click, the prompt, the result. Teach one thing a beginner can do today.
+- End with one genuine question CTA. No links in the body (they go in the first comment).
+- At most 3 tasteful hashtags on their own final line.`;
+    case "instagram_reel":
+      return `Constraints: a 25-40 second Instagram Reel script that feels native and creative. Structure it EXACTLY as labelled blocks:
+HOOK (0-3s): a visual + spoken line that stops the thumb in 2 seconds ("This free AI built my whole website while I drank coffee").
+BEATS: 4-6 fast cuts. For each: [on-screen text] + (b-roll / screen-recording) + the spoken VO line. Show the actual screen — the tool, the prompt typed, the result appearing.
+PAYOFF: the "wait, it's that easy?" reveal.
+CTA: spoken + [on-screen] — "Follow for the AI stuff nobody explains."
+AUDIO: suggest a trending-audio vibe (upbeat / lo-fi / suspense).
+CAPTION: 2-3 short lines with line breaks + a soft question, then 5-8 niche hashtags (#ai #chatgpt #claude #vibecoding #nocode …).
+Keep VO punchy and plain-language — explain the AI basics most people don't get.`;
+    case "tiktok":
+      return `Constraints: a 20-45 second TikTok script in a raw, fast, native voice (talk like a real creator, not a brand). Structure as labelled blocks:
+HOOK (0-2s): a pattern-interrupt line ("Stop using ChatGPT like it's Google." / "Nobody is talking about this free AI tool."). Pair it with a bold [text overlay].
+BODY: 3-5 quick beats, each with [text overlay] + (screen recording / b-roll) + the spoken line. Demo the thing on screen — type the prompt, show the app building itself.
+TWIST: a "wait for it" payoff that earns a rewatch.
+CTA: "Follow — I make AI make sense" (+ [text overlay]).
+SOUND: note a trending-sound vibe.
+CAPTION: one punchy line + a question + 5-8 hashtags (#ai #chatgpt #claude #aitools #vibecoding #nocode #learnonfigtok).
+Voice: casual, confident, zero corporate fluff. Teach an AI basic a normal person can repeat.`;
     case "x":
       return "Constraints: a thread of 5-9 tweets, each <=280 chars, numbered (1/, 2/...). Tweet 1 is the hook, last is a CTA.";
     case "youtube_short":
@@ -1268,6 +1300,62 @@ I built a small example and the trade-off became obvious — simpler is usually 
 Takeaway: don't reach for the complex tool until the simple one actually breaks.
 
 How do you approach ${t}? — <danfordchris/>`;
+      break;
+    case "instagram_reel":
+      content = `HOOK (0-3s)
+[on-screen: "${t}"]
+(b-roll: screen recording, cursor ready)
+VO: Most people have no idea you can do this — for free.
+
+BEAT 1
+[on-screen: "Step 1"]
+(screen-recording: open the tool)
+VO: You just type what you want in plain English.
+
+BEAT 2
+[on-screen: "watch this"]
+(screen-recording: the result builds itself)
+VO: No code. The AI does the building.
+
+PAYOFF
+VO: That's it. That's the whole trick.
+
+CTA
+[on-screen: "follow for more"]
+VO: Follow <danfordchris/> — the AI stuff nobody explains.
+
+AUDIO: upbeat, trending.
+
+CAPTION:
+${hook}
+Try it and tell me what you built 👇
+#ai #chatgpt #claude #vibecoding #nocode #aitools #learnontok`;
+      break;
+    case "tiktok":
+      content = `HOOK (0-2s)
+[text overlay: "${t}"]
+(screen recording)
+VO: Stop overpaying for this — AI does it free.
+
+BEAT 1
+[text overlay: "type this"]
+VO: You literally just describe what you want.
+
+BEAT 2
+(screen recording: it builds in real time)
+VO: And it builds the whole thing for you.
+
+TWIST
+[text overlay: "wait for it…"]
+VO: Look how fast that was.
+
+CTA
+[text overlay: "follow"]
+VO: Follow — I make AI make sense.
+
+SOUND: trending, punchy.
+
+CAPTION: ${hook} Which AI tool should I break down next? #ai #chatgpt #claude #aitools #vibecoding #nocode`;
       break;
     case "x":
       content = `1/ ${hook}
