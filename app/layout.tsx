@@ -7,8 +7,12 @@ import { AppSidebar, AppMobileNav } from "@/components/app-nav";
 import { CommandPalette } from "@/components/command-palette";
 
 export const metadata: Metadata = {
-  title: "<DanfordChris/> Content Lab",
+  title: "ContentForge — <DanfordChris/>",
   description: "Capture → Multiply → Recycle. Never run out of content again.",
+};
+
+export const viewport = {
+  themeColor: "#0A0A0A",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -20,7 +24,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <AppSidebar user={user} showSignOut={adminConfigured && !!user} />
           <main className="flex-1 min-w-0">
             <AppMobileNav />
-            <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-8">{children}</div>
+            <div className="mx-auto max-w-5xl px-4 pt-6 pb-28 md:px-8 md:py-8">{children}</div>
           </main>
         </div>
         <CommandPalette />

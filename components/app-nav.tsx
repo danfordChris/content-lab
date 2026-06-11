@@ -14,8 +14,21 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 
+// Bottom tab bar shows the 5 most-used destinations; Inbox lives in the top bar.
+const TABS = [
+  { href: "/", label: "Home", icon: "▦" },
+  { href: "/ideas", label: "Ideas", icon: "✦" },
+  { href: "/drafts", label: "Drafts", icon: "✎" },
+  { href: "/calendar", label: "Calendar", icon: "▤" },
+  { href: "/settings", label: "Settings", icon: "⚙" },
+];
+
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
+function openPalette() {
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
 }
 
 export function AppSidebar({ user, showSignOut }: { user?: { email?: string } | null; showSignOut?: boolean }) {
@@ -25,7 +38,7 @@ export function AppSidebar({ user, showSignOut }: { user?: { email?: string } | 
     <aside className="hidden md:flex w-60 flex-col gap-1 border-r border-[var(--border)] p-4 sticky top-0 h-screen">
       <Link href="/" className="px-2 pb-5 pt-1">
         <Wordmark size={17} />
-        <div className="text-[11px] text-zinc-500 mt-0.5">Content Lab</div>
+        <div className="text-[11px] text-zinc-500 mt-0.5">ContentForge</div>
       </Link>
       {NAV.map((n) => {
         const active = isActive(pathname, n.href);
@@ -48,24 +61,65 @@ export function AppMobileNav() {
   const pathname = usePathname();
   if (pathname === "/login") return null;
   return (
-    <nav className="md:hidden flex items-center gap-1 overflow-x-auto border-b border-[var(--border)] px-3 py-2 sticky top-0 bg-[var(--bg)] z-20">
-      <Link href="/" className="mr-2 whitespace-nowrap">
-        <Wordmark size={13} />
-      </Link>
-      {NAV.map((n) => {
-        const active = isActive(pathname, n.href);
-        return (
+    <>
+      {/* slim top bar */}
+      <nav className="md:hidden flex items-center justify-between border-b border-[var(--border)] px-4 py-2.5 sticky top-0 bg-[var(--bg)] z-20">
+        <Link href="/">
+          <Wordmark size={14} />
+        </Link>
+        <div className="flex items-center gap-1.5">
           <Link
-            key={n.href}
-            href={n.href}
-            className={`rounded-md px-2.5 py-1 text-xs whitespace-nowrap transition ${
-              active ? "bg-[var(--accent-soft)] text-white" : "text-zinc-400 hover:bg-zinc-900"
+            href="/inbox"
+            className={`rounded-lg px-2.5 py-1.5 text-sm ${
+              isActive(pathname, "/inbox") ? "bg-[var(--accent-soft)] text-white" : "text-zinc-400"
             }`}
+            aria-label="Inbox"
           >
-            {n.label}
+            ↺
           </Link>
-        );
-      })}
-    </nav>
+          <button
+            onClick={openPalette}
+            className="rounded-lg px-2.5 py-1.5 text-sm text-zinc-400"
+            aria-label="Search and capture"
+          >
+            ⌕
+          </button>
+        </div>
+      </nav>
+
+      {/* bottom tab bar */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-30 flex items-stretch border-t border-[var(--border)] bg-[#0c0c0f]/95 backdrop-blur"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        {TABS.map((t) => {
+          const active = isActive(pathname, t.href);
+          return (
+            <Link
+              key={t.href}
+              href={t.href}
+              className="flex-1 flex flex-col items-center gap-0.5 py-2.5"
+              style={{ color: active ? "var(--accent)" : "var(--text-2)" }}
+            >
+              <span className="text-[17px] leading-none">{t.icon}</span>
+              <span className={`text-[10px] ${active ? "text-white" : ""}`}>{t.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* floating quick-capture */}
+      <button
+        onClick={openPalette}
+        aria-label="Capture an idea"
+        className="md:hidden fixed right-4 z-30 h-12 w-12 rounded-full text-xl font-medium text-white shadow-lg"
+        style={{
+          background: "var(--accent)",
+          bottom: "calc(76px + env(safe-area-inset-bottom))",
+        }}
+      >
+        +
+      </button>
+    </>
   );
 }

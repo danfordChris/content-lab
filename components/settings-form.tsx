@@ -15,6 +15,8 @@ export function SettingsForm({ initial }: { initial: BrandSettings }) {
     customRules: initial.customRules ?? "",
     signature: initial.signature ?? "",
     imageStyle: { ...(initial.imageStyle ?? {}) },
+    socials: { ...(initial.socials ?? {}) },
+    notifyEmail: initial.notifyEmail ?? "",
   });
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
@@ -27,6 +29,10 @@ export function SettingsForm({ initial }: { initial: BrandSettings }) {
   }
   function setImg(k: keyof ImageStyle, v: string) {
     setB((p) => ({ ...p, imageStyle: { ...p.imageStyle, [k]: v } }));
+    setSaved(false);
+  }
+  function setSocial(k: "instagram" | "tiktok" | "x", v: string) {
+    setB((p) => ({ ...p, socials: { ...p.socials, [k]: v.replace(/^@/, "") } }));
     setSaved(false);
   }
 
@@ -132,6 +138,34 @@ export function SettingsForm({ initial }: { initial: BrandSettings }) {
         )}
       </section>
 
+      {/* Socials + notifications */}
+      <section className="card p-5 flex flex-col gap-4">
+        <h2 className="text-sm font-medium text-zinc-300">Social handles &amp; notifications</h2>
+        <p className="text-xs text-zinc-500 -mt-2">
+          The handles appear on every carousel's closing slide. The email receives your posting reminders.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-4">
+          <Field label="Instagram">
+            <HandleInput value={b.socials?.instagram ?? ""} onChange={(v) => setSocial("instagram", v)} />
+          </Field>
+          <Field label="TikTok">
+            <HandleInput value={b.socials?.tiktok ?? ""} onChange={(v) => setSocial("tiktok", v)} />
+          </Field>
+          <Field label="X / Twitter">
+            <HandleInput value={b.socials?.x ?? ""} onChange={(v) => setSocial("x", v)} />
+          </Field>
+        </div>
+        <Field label="Notification email" hint="defaults to your login email">
+          <input
+            className="input"
+            type="email"
+            value={b.notifyEmail ?? ""}
+            placeholder="you@example.com"
+            onChange={(e) => set("notifyEmail", e.target.value)}
+          />
+        </Field>
+      </section>
+
       {/* Save bar */}
       <div className="flex items-center gap-3 sticky bottom-4">
         <button onClick={save} disabled={pending} className="btn btn-primary">
@@ -152,6 +186,20 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       </span>
       {children}
     </label>
+  );
+}
+
+function HandleInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-zinc-500 mono">@</span>
+      <input
+        className="input flex-1"
+        value={value}
+        placeholder="codewithdanfordchris"
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
   );
 }
 

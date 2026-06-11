@@ -39,7 +39,7 @@ export default function LoginPage() {
           <Wordmark size={24} />
         </div>
         <div>
-          <h1 className="text-lg font-medium">Content Lab</h1>
+          <h1 className="text-lg font-medium">ContentForge</h1>
           <p className="text-sm text-zinc-500 mt-1">Sign in to your content engine.</p>
         </div>
         <button onClick={signInGoogle} disabled={busy} className="btn btn-primary w-full">

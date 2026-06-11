@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth", "/__/", "/generated", "/_next", "/favicon"];
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/api/auth",
+  "/api/cron", // cron routes self-authenticate via CRON_SECRET
+  "/__/",
+  "/generated",
+  "/_next",
+  "/favicon",
+  "/icon",
+  "/apple-icon",
+  "/manifest",
+];
 
 export function middleware(req: NextRequest) {
   // Auth only applies when Firebase is configured; otherwise it's local mode.

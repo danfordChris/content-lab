@@ -4,7 +4,8 @@ export type Pillar =
   | "code_x_ai"
   | "simulations"
   | "build_in_public"
-  | "dev_education";
+  | "dev_education"
+  | "social_education";
 
 export type IdeaStatus = "spark" | "developing" | "ready" | "used" | "archived";
 export type Platform =
@@ -79,6 +80,9 @@ export interface CalendarSlot {
   scheduledAt: string; // ISO
   status: "scheduled" | "posted" | "skipped";
   postedAt?: string;
+  pillar?: Pillar; // which content pillar this slot serves (weekly planner)
+  note?: string; // how-to-post tip shown in calendar + reminder emails
+  ideaId?: string; // source idea, for traceability
 }
 
 export interface ImageStyle {
@@ -102,6 +106,8 @@ export interface BrandSettings {
   imageStyle?: ImageStyle;
   // social handles (used on the carousel outro slide)
   socials?: { instagram?: string; tiktok?: string; x?: string };
+  // where reminder emails go (defaults to the login email)
+  notifyEmail?: string;
 }
 
 export const DEFAULT_BRAND: BrandSettings = {
@@ -156,6 +162,7 @@ export const PILLARS: { value: Pillar; label: string; color: string }[] = [
   { value: "simulations", label: "Simulations", color: "#fbbf24" },
   { value: "build_in_public", label: "Build in Public", color: "#34d399" },
   { value: "dev_education", label: "Dev Education", color: "#fb923c" },
+  { value: "social_education", label: "Social Education", color: "#2dd4bf" },
 ];
 
 export const PLATFORMS: { value: Platform; label: string; color: string; limit?: number }[] = [

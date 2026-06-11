@@ -19,6 +19,7 @@ const PILLAR_VALUES = [
   "simulations",
   "build_in_public",
   "dev_education",
+  "social_education",
 ] as const;
 
 const KEY = process.env.OPENAI_API_KEY;
@@ -687,7 +688,7 @@ export async function expandIdea(idea: Idea, brand?: BrandSettings): Promise<Exp
   const prompt = `Expand this raw idea into a content brief. Return STRICT JSON with keys:
 angle (string), audience (string), whyNow (string), outline (string[] of 4-6),
 hooks (string[] of exactly 3), suggestedPillar (one of: code_craft, ai_practice, code_x_ai,
-simulations, build_in_public, dev_education), suggestedFormats (string[] from: linkedin, x,
+simulations, build_in_public, dev_education, social_education), suggestedFormats (string[] from: linkedin, x,
 youtube_short, video_script, blog, carousel), examples (string[] of 1-3 concrete real examples).
 <user_content>TITLE: ${idea.title}
 NOTES: ${idea.body ?? "(none)"}</user_content>`;
@@ -812,7 +813,9 @@ export async function generateIdeas(opts: {
 ${opts.pillar ? `Focus on the "${opts.pillar}" pillar.` : "Vary the ideas across the brand pillars."}
 ${opts.topic ? `Theme/seed to riff on: ${opts.topic}.` : ""}
 ${opts.avoidTitles?.length ? `Do NOT repeat or closely overlap these existing ideas: ${opts.avoidTitles.slice(0, 40).join("; ")}.` : ""}
-Pillars: code_craft, ai_practice, code_x_ai, simulations, build_in_public, dev_education.
+Pillars: code_craft, ai_practice, code_x_ai, simulations, build_in_public, dev_education, social_education.
+(social_education = everyday tech literacy for non-technical people — online safety, digital money,
+AI in daily life — great for bilingual English/Swahili posts.)
 Each idea must be a CONCRETE, scroll-stopping post title (a real post, not a topic category),
 a one-line angle/hook explaining what makes it interesting, the best pillar, and the best
 format (one of: linkedin, x, youtube_short, video_script, blog, carousel).
@@ -848,12 +851,14 @@ function fallbackIdeas(pillar: string | undefined, count: number): GeneratedIdea
     { title: "I simulated a traffic jam to understand backpressure", angle: "A tiny simulation that taught me about API load.", pillar: "simulations", format: "video_script" },
     { title: "Function calling, explained by building a weather agent", angle: "From zero to a working tool-using agent.", pillar: "code_x_ai", format: "blog" },
     { title: "The git command that saved my week", angle: "A 40-second tip most devs don't know.", pillar: "dev_education", format: "youtube_short" },
-    { title: "Building Content Lab in public — week 1", angle: "What shipped, what broke, the numbers.", pillar: "build_in_public", format: "linkedin" },
+    { title: "Building ContentForge in public — week 1", angle: "What shipped, what broke, the numbers.", pillar: "build_in_public", format: "linkedin" },
     { title: "pgvector: semantic search inside plain Postgres", angle: "No extra service — just SQL.", pillar: "code_x_ai", format: "carousel" },
     { title: "How I stopped running out of content ideas", angle: "The system (this app) that recycles ideas forever.", pillar: "build_in_public", format: "x" },
     { title: "Boids: flocking behavior from 3 simple rules", angle: "Emergent complexity from tiny rules.", pillar: "simulations", format: "video_script" },
     { title: "Prompt injection, shown with a real broken app", angle: "Make the risk concrete, then fix it.", pillar: "ai_practice", format: "blog" },
     { title: "Stop console.logging — try this instead", angle: "A faster debugging workflow.", pillar: "dev_education", format: "youtube_short" },
+    { title: "How to spot a phishing message (Jinsi ya kutambua ujumbe wa ulaghai)", angle: "Five red flags anyone can check before clicking — bilingual, for everyone.", pillar: "social_education", format: "carousel" },
+    { title: "What AI can and can't do — explained for your family", angle: "Plain-language truths about AI hype, in English and Swahili.", pillar: "social_education", format: "youtube_short" },
   ];
   const filtered = pillar ? pool.filter((i) => i.pillar === pillar) : pool;
   return (filtered.length ? filtered : pool).slice(0, count);

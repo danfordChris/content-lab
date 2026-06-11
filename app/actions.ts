@@ -12,6 +12,7 @@ import {
   generateIdeas,
 } from "@/lib/ai";
 import { effectiveBrand } from "@/lib/types";
+import { weekTemplate, postingTip, slotTimeISO, type WeekRow } from "@/lib/planner";
 import type {
   BrandSettings,
   GeneratedIdea,
@@ -317,6 +318,137 @@ export async function saveIdeasAction(
   revalidatePath("/ideas");
   revalidatePath("/");
   return valid.length;
+}
+
+// ── Weekly planner ───────────────────────────────────────────────────────────
+export async function suggestWeekAction(weekStartISO: string): Promise<WeekRow[]> {
+  const db = await readDB();
+  const brand = effectiveBrand(db.settings);
+  const template = weekTemplate(weekStartISO);
+
+  // Ideas already booked on the calendar shouldn't be re-suggested.
+  const bookedIdeaIds = new Set(db.calendar.map((c) => c.ideaId).filter(Boolean));
+  const available = db.ideas.filter(
+    (i) => (i.status === "ready" || i.status === "developing") && !bookedIdeaIds.has(i.id)
+  );
+
+  const rows: WeekRow[] = [];
+  const taken = new Set<string>();
+  for (const t of template) {
+    const vaultIdea = available.find((i) => i.pillar === t.pillar && !taken.has(i.id));
+    if (vaultIdea) {
+      taken.add(vaultIdea.id);
+      rows.push({
+        ...t,
+        enabled: true,
+        source: "vault",
+        ideaId: vaultIdea.id,
+        title: vaultIdea.title,
+        angle: vaultIdea.brief?.angle ?? vaultIdea.body?.slice(0, 140),
+      });
+    } else {
+      rows.push({ ...t, enabled: true, source: "ai", title: "", angle: "" });
+    }
+  }
+
+  // ONE batched AI call for all missing days (respects the free-tier rate limit).
+  const missing = rows.filter((r) => r.source === "ai" && !r.title);
+  if (missing.length) {
+    const generated = await generateIdeas({
+      topic: `One idea per pillar, in this exact order: ${missing.map((m) => m.pillar).join(", ")}. Make each idea fit its pillar.`,
+      count: missing.length,
+      avoidTitles: db.ideas.map((i) => i.title),
+      brand,
+    });
+    missing.forEach((row, i) => {
+      // Prefer a generated idea matching the pillar; fall back to positional.
+      const match =
+        generated.find((g) => g.pillar === row.pillar && !rows.some((r) => r.title === g.title)) ??
+        generated[i];
+      if (match) {
+        row.title = match.title;
+        row.angle = match.angle;
+      } else {
+        row.enabled = false;
+      }
+    });
+  }
+  return rows;
+}
+
+export type WeekCreateResult = { dayName: string; ok: boolean; title: string; error?: string };
+
+export async function createWeekAction(
+  rows: WeekRow[],
+  weekStartISO: string
+): Promise<WeekCreateResult[]> {
+  const results: WeekCreateResult[] = [];
+  // Sequential on purpose: stays under the AI rate limit and isolates failures.
+  for (const row of rows.filter((r) => r.enabled && r.title.trim().length >= 2)) {
+    try {
+      const db = await readDB();
+      const brand = effectiveBrand(db.settings);
+
+      // 1) Ensure the idea exists in the vault.
+      let idea: Idea | undefined = row.ideaId ? db.ideas.find((i) => i.id === row.ideaId) : undefined;
+      if (!idea) {
+        idea = {
+          id: uid(),
+          title: row.title.trim(),
+          body: row.angle?.trim() || undefined,
+          pillar: row.pillar,
+          status: "ready",
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        await mutate((d) => d.ideas.unshift(idea!));
+      }
+
+      // 2) Generate the platform-native draft.
+      const g = await generateDraft(idea, row.platform, brand);
+
+      // 3) Create draft + calendar slot in one mutation.
+      const scheduledAt = slotTimeISO(weekStartISO, row.dayOffset, row.hour);
+      await mutate((d) => {
+        const draft: Draft = {
+          id: uid(),
+          ideaId: idea!.id,
+          platform: row.platform,
+          title: g.title,
+          content: g.content,
+          status: "scheduled",
+          formatMeta: g.formatMeta,
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        d.drafts.unshift(draft);
+        d.calendar.push({
+          id: uid(),
+          draftId: draft.id,
+          platform: row.platform,
+          scheduledAt,
+          status: "scheduled",
+          pillar: row.pillar,
+          note: postingTip(row.platform),
+          ideaId: idea!.id,
+        });
+        const i = d.ideas.find((x) => x.id === idea!.id);
+        if (i) i.status = "used";
+      });
+      results.push({ dayName: row.dayName, ok: true, title: row.title });
+    } catch (e) {
+      results.push({
+        dayName: row.dayName,
+        ok: false,
+        title: row.title,
+        error: e instanceof Error ? e.message.slice(0, 120) : "failed",
+      });
+    }
+  }
+  revalidatePath("/calendar");
+  revalidatePath("/drafts");
+  revalidatePath("/ideas");
+  return results;
 }
 
 // ── Brand settings ───────────────────────────────────────────────────────────

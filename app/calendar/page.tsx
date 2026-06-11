@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { readDB } from "@/lib/store";
-import { PlatformBadge } from "@/components/badges";
+import { PlatformBadge, PillarBadge } from "@/components/badges";
 import { MarkPostedButton } from "@/components/calendar-actions";
 
 export const dynamic = "force-dynamic";
@@ -26,20 +26,27 @@ export default async function CalendarPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <header>
-        <h1 className="text-2xl font-semibold">Calendar</h1>
-        <p className="text-sm text-zinc-500">Your publishing schedule. Schedule drafts from the editor.</p>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Calendar</h1>
+          <p className="text-sm text-zinc-500">Your publishing schedule — plan, track, post.</p>
+        </div>
+        <Link href="/calendar/plan" className="btn btn-primary text-sm shrink-0">
+          ✦ Plan my week
+        </Link>
       </header>
 
       {slots.length === 0 ? (
-        <div className="card p-10 text-center text-zinc-500">
-          <p className="text-base mb-1">Nothing scheduled.</p>
-          <p className="text-sm">
-            Open a draft and hit <span className="text-zinc-300">Schedule</span>.{" "}
-            <Link href="/drafts" className="text-[var(--accent)] hover:underline">
-              Go to drafts →
-            </Link>
-          </p>
+        <div className="card p-10 text-center flex flex-col items-center gap-3">
+          <div>
+            <p className="text-base text-zinc-400 mb-1">Nothing scheduled.</p>
+            <p className="text-sm text-zinc-600">
+              Plan a full week in one go, or schedule a single draft from the editor.
+            </p>
+          </div>
+          <Link href="/calendar/plan" className="btn btn-primary text-sm">
+            ✦ Plan my week
+          </Link>
         </div>
       ) : (
         <div className="flex flex-col gap-5">
@@ -55,26 +62,34 @@ export default async function CalendarPage() {
                   });
                   const overdue = s.status === "scheduled" && new Date(s.scheduledAt).getTime() < Date.now();
                   return (
-                    <div key={s.id} className="card p-4 flex items-center gap-3">
-                      <span className="mono text-sm text-zinc-400 w-14 shrink-0">{time}</span>
-                      <PlatformBadge platform={s.platform} />
-                      <div className="min-w-0 flex-1">
-                        {d ? (
-                          <Link href={`/drafts/${d.id}`} className="text-sm hover:underline truncate block">
-                            {d.title}
-                          </Link>
+                    <div key={s.id} className="card p-4 flex flex-col gap-2">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="mono text-sm text-zinc-400 w-14 shrink-0">{time}</span>
+                        <PlatformBadge platform={s.platform} />
+                        {s.pillar && <PillarBadge pillar={s.pillar} />}
+                        <div className="min-w-0 flex-1">
+                          {d ? (
+                            <Link href={`/drafts/${d.id}`} className="text-sm hover:underline truncate block">
+                              {d.title}
+                            </Link>
+                          ) : (
+                            <span className="text-sm text-zinc-600">(draft deleted)</span>
+                          )}
+                        </div>
+                        {s.status === "posted" ? (
+                          <span className="chip text-emerald-400 border-emerald-900">posted</span>
+                        ) : overdue ? (
+                          <span className="chip text-amber-400 border-amber-900">overdue</span>
                         ) : (
-                          <span className="text-sm text-zinc-600">(draft deleted)</span>
+                          <span className="chip text-violet-300 border-violet-900">scheduled</span>
                         )}
+                        {s.status !== "posted" && <MarkPostedButton slotId={s.id} />}
                       </div>
-                      {s.status === "posted" ? (
-                        <span className="chip text-emerald-400 border-emerald-900">posted</span>
-                      ) : overdue ? (
-                        <span className="chip text-amber-400 border-amber-900">overdue</span>
-                      ) : (
-                        <span className="chip text-violet-300 border-violet-900">scheduled</span>
+                      {s.note && (
+                        <p className="text-xs text-zinc-500 border-l-2 border-[var(--border)] pl-3">
+                          💡 {s.note}
+                        </p>
                       )}
-                      {s.status !== "posted" && <MarkPostedButton slotId={s.id} />}
                     </div>
                   );
                 })}

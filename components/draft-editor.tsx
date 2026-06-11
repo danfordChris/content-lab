@@ -314,7 +314,7 @@ function SlideCard({
   }
 
   return (
-    <div className="card p-4 flex gap-4">
+    <div className="card p-4 flex flex-col sm:flex-row gap-4">
       <div className="shrink-0 w-36">
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
