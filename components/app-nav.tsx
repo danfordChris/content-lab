@@ -9,6 +9,7 @@ const NAV = [
   { href: "/", label: "Dashboard", icon: "▦" },
   { href: "/ideas", label: "Idea Vault", icon: "✦" },
   { href: "/drafts", label: "Drafts", icon: "✎" },
+  { href: "/discuss", label: "Discuss", icon: "✺" },
   { href: "/calendar", label: "Calendar", icon: "▤" },
   { href: "/inbox", label: "Inbox", icon: "↺" },
   { href: "/settings", label: "Settings", icon: "⚙" },
@@ -68,6 +69,15 @@ export function AppMobileNav() {
           <Wordmark size={14} />
         </Link>
         <div className="flex items-center gap-1.5">
+          <Link
+            href="/discuss"
+            className={`rounded-lg px-2.5 py-1.5 text-sm ${
+              isActive(pathname, "/discuss") ? "bg-[var(--accent-soft)] text-white" : "text-zinc-400"
+            }`}
+            aria-label="Discuss with AI"
+          >
+            ✺
+          </Link>
           <Link
             href="/inbox"
             className={`rounded-lg px-2.5 py-1.5 text-sm ${

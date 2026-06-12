@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import {
   deleteIdea,
 } from "@/app/actions";
 import { PillarBadge, StatusBadge, PlatformBadge } from "@/components/badges";
+import { DiscussPanel } from "@/components/discuss-panel";
 import { PILLARS, PLATFORMS, type Draft, type Idea, type IdeaStatus, type Platform, type Pillar } from "@/lib/types";
 
 export function IdeaWorkspace({ idea, drafts }: { idea: Idea; drafts: Draft[] }) {
@@ -21,6 +22,10 @@ export function IdeaWorkspace({ idea, drafts }: { idea: Idea; drafts: Draft[] })
   const [title, setTitle] = useState(idea.title);
   const [body, setBody] = useState(idea.body ?? "");
   const [picked, setPicked] = useState<Platform[]>(["linkedin", "x"]);
+
+  // Reflect server-side changes (e.g. an applied AI revision) into the edit fields.
+  useEffect(() => setTitle(idea.title), [idea.title]);
+  useEffect(() => setBody(idea.body ?? ""), [idea.body]);
 
   function saveMeta(patch: Partial<Idea>) {
     start(async () => {
@@ -112,6 +117,20 @@ export function IdeaWorkspace({ idea, drafts }: { idea: Idea; drafts: Draft[] })
           </div>
         )}
       </div>
+
+      {/* Discuss with AI */}
+      <details className="card p-5" open={(idea.chat?.length ?? 0) > 0}>
+        <summary className="cursor-pointer text-sm font-medium text-zinc-300 select-none">
+          Discuss with AI
+          {idea.chat?.length ? (
+            <span className="text-zinc-600"> · {Math.ceil(idea.chat.length / 2)} turns</span>
+          ) : null}
+        </summary>
+        <p className="text-xs text-zinc-500 mt-1 mb-3">
+          Refine the title and notes by chatting. Apply a suggestion, then generate content below.
+        </p>
+        <DiscussPanel kind="idea" id={idea.id} initialChat={idea.chat ?? []} />
+      </details>
 
       {/* AI expansion */}
       <div className="card p-5">

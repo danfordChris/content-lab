@@ -12,12 +12,14 @@ import {
   generateBgDataUrl,
   slideWantsBg,
   generateIdeas,
+  discussContent,
   friendlyAiError,
 } from "@/lib/ai";
 import { effectiveBrand, platformMeta } from "@/lib/types";
 import { weekTemplate, postingTip, slotTimeISO, type WeekRow } from "@/lib/planner";
 import type {
   BrandSettings,
+  ChatMessage,
   GeneratedIdea,
   Draft,
   Idea,
@@ -161,6 +163,90 @@ export async function saveDraft(
     d.updatedAt = now();
   });
   revalidatePath(`/drafts/${id}`);
+}
+
+// ── Discuss with AI (drafts + ideas) ─────────────────────────────────────────
+type DiscussKind = "draft" | "idea";
+
+/** Send a message in a draft/idea's discussion thread. Persists both the user
+ *  turn and the AI reply on the target, and returns the assistant message so the
+ *  client can render it without a full reload. */
+export async function discussAction(
+  kind: DiscussKind,
+  id: string,
+  userMessage: string
+): Promise<ChatMessage> {
+  const text = userMessage?.trim();
+  if (!text) throw new Error("Empty message");
+
+  const db = await readDB();
+  const brand = effectiveBrand(db.settings);
+  const target =
+    kind === "draft" ? db.drafts.find((d) => d.id === id) : db.ideas.find((i) => i.id === id);
+  if (!target) throw new Error(`${kind} not found`);
+
+  const history = target.chat ?? [];
+  const result = await discussContent({
+    kind,
+    platform: kind === "draft" ? (target as Draft).platform : undefined,
+    title: target.title,
+    text: kind === "draft" ? (target as Draft).content : ((target as Idea).body ?? ""),
+    history,
+    userMessage: text,
+    brand,
+  });
+
+  const userMsg: ChatMessage = { role: "user", content: text, createdAt: now() };
+  const aiMsg: ChatMessage = {
+    role: "assistant",
+    content: result.message,
+    revision: result.revision,
+    createdAt: now(),
+  };
+
+  await mutate((d) => {
+    const t =
+      kind === "draft" ? d.drafts.find((x) => x.id === id) : d.ideas.find((x) => x.id === id);
+    if (!t) throw new Error(`${kind} not found`);
+    t.chat = [...(t.chat ?? []), userMsg, aiMsg];
+    t.updatedAt = now();
+  });
+
+  revalidatePath("/discuss");
+  revalidatePath(kind === "draft" ? `/drafts/${id}` : `/ideas/${id}`);
+  return aiMsg;
+}
+
+/** Apply a proposed revision (by its index in the chat) to the target's content. */
+export async function applyRevisionAction(
+  kind: DiscussKind,
+  id: string,
+  messageIndex: number
+): Promise<void> {
+  await mutate((db) => {
+    const target =
+      kind === "draft" ? db.drafts.find((d) => d.id === id) : db.ideas.find((i) => i.id === id);
+    if (!target) throw new Error(`${kind} not found`);
+    const msg = target.chat?.[messageIndex];
+    if (!msg?.revision) throw new Error("No revision to apply");
+    const { title, text } = msg.revision;
+    if (title) target.title = title;
+    if (text !== undefined) {
+      if (kind === "draft") (target as Draft).content = text;
+      else (target as Idea).body = text;
+    }
+    msg.applied = true;
+    target.updatedAt = now();
+  });
+
+  revalidatePath("/discuss");
+  if (kind === "draft") {
+    revalidatePath(`/drafts/${id}`);
+    revalidatePath("/drafts");
+  } else {
+    revalidatePath(`/ideas/${id}`);
+    revalidatePath("/ideas");
+  }
 }
 
 // ── Image generation (OpenAI Images) ─────────────────────────────────────────

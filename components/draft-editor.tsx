@@ -13,6 +13,7 @@ import {
   generatePostImageAction,
 } from "@/app/actions";
 import { PlatformBadge, StatusBadge } from "@/components/badges";
+import { DiscussPanel } from "@/components/discuss-panel";
 import { platformMeta, type Draft, type DraftStatus } from "@/lib/types";
 import {
   downloadText,
@@ -103,6 +104,23 @@ export function DraftEditor({ draft }: { draft: Draft }) {
         </>
       )}
 
+      <details className="card p-4" open={(draft.chat?.length ?? 0) > 0}>
+        <summary className="cursor-pointer text-sm font-medium text-zinc-300 select-none">
+          Discuss with AI
+          {draft.chat?.length ? (
+            <span className="text-zinc-600"> · {Math.ceil(draft.chat.length / 2)} turns</span>
+          ) : null}
+        </summary>
+        <div className="mt-3">
+          <DiscussPanel
+            kind="draft"
+            id={draft.id}
+            platform={draft.platform}
+            initialChat={draft.chat ?? []}
+          />
+        </div>
+      </details>
+
       <button
         onClick={() => {
           if (confirm("Delete this draft?")) {
@@ -127,6 +145,11 @@ function TextEditor({ draft }: { draft: Draft }) {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const limit = platformMeta(draft.platform).limit;
   const over = limit ? content.length > limit : false;
+
+  // Reflect server-side content changes (e.g. an applied AI revision) into the box.
+  useEffect(() => {
+    setContent(draft.content);
+  }, [draft.content]);
 
   useEffect(() => {
     if (content === draft.content) return;

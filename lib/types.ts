@@ -34,6 +34,18 @@ export interface DraftFormatMeta {
   [key: string]: unknown;
 }
 
+/** One turn in a "Discuss with AI" thread attached to a draft or idea.
+ *  `revision` is present only when the AI proposes a concrete change the user
+ *  can apply: `text` replaces the draft's content (or the idea's body), and an
+ *  optional `title` replaces the title. */
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  revision?: { title?: string; text?: string };
+  applied?: boolean;
+  createdAt: string;
+}
+
 export interface GeneratedIdea {
   title: string;
   angle: string;
@@ -61,6 +73,7 @@ export interface Idea {
   sourceUrl?: string;
   sourceComment?: string;
   brief?: ExpandedBrief;
+  chat?: ChatMessage[];
   createdAt: string;
   updatedAt: string;
 }
@@ -74,6 +87,7 @@ export interface Draft {
   status: DraftStatus;
   imageUrl?: string;
   formatMeta?: DraftFormatMeta;
+  chat?: ChatMessage[];
   createdAt: string;
   updatedAt: string;
 }

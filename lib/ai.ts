@@ -4,6 +4,7 @@ import path from "path";
 import type {
   BrandSettings,
   CarouselSlide,
+  ChatMessage,
   ExpandedBrief,
   GeneratedIdea,
   Idea,
@@ -90,6 +91,48 @@ async function chat(
   if (!res.ok) throw new Error(`AI error ${res.status}: ${await res.text()}`);
   const data = await res.json();
   return data.choices?.[0]?.message?.content ?? "";
+}
+
+type ChatTurn = { role: "system" | "user" | "assistant"; content: string };
+
+/** Multi-turn variant of `chat()`: send a full message history instead of one prompt.
+ *  Used by the "Discuss with AI" thread (drafts + ideas). */
+async function chatMessages(
+  messages: ChatTurn[],
+  json: boolean,
+  model: string = MODEL
+): Promise<string> {
+  const res = await fetch(`${BASE}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
+    body: JSON.stringify({
+      model,
+      temperature: json ? 0.5 : 0.7,
+      messages,
+      ...(json ? { response_format: { type: "json_object" } } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(`AI error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
+/** Quality chain for multi-turn chat: Pro → Flash → brief backoff → Flash. */
+async function chatMessagesQuality(messages: ChatTurn[], json: boolean): Promise<string> {
+  try {
+    return await chatMessages(messages, json, MODEL_QUALITY);
+  } catch (e1) {
+    console.error(`ai: ${MODEL_QUALITY} chat failed, retrying with ${MODEL} →`, trim(e1));
+    try {
+      return await chatMessages(messages, json, MODEL);
+    } catch (e2) {
+      if (/\b(429|503)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|high demand/i.test(String(e2))) {
+        await new Promise((r) => setTimeout(r, 4000));
+        return await chatMessages(messages, json, MODEL);
+      }
+      throw e2;
+    }
+  }
 }
 
 /** Writing-quality chain: Pro → Flash → short wait → Flash again → throw.
@@ -1470,4 +1513,62 @@ function escapeXml(s: string): string {
   return s.replace(/[<>&'"]/g, (c) =>
     ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c]!)
   );
+}
+
+// ── Discuss with AI (drafts + ideas) ─────────────────────────────────────────
+export interface DiscussResult {
+  message: string;
+  revision?: { title?: string; text?: string };
+}
+
+/** Conversational refinement for a draft or an idea. The AI answers the user and,
+ *  when it proposes a concrete change, returns a `revision` the user can apply. */
+export async function discussContent(opts: {
+  kind: "draft" | "idea";
+  platform?: Platform;
+  title: string;
+  text: string;
+  history: ChatMessage[];
+  userMessage: string;
+  brand?: BrandSettings;
+}): Promise<DiscussResult> {
+  const { kind, platform, title, text, history, userMessage, brand } = opts;
+
+  let system = buildSystem(brand);
+  if (kind === "draft" && platform) {
+    system += `\n\nYou are helping the user refine an existing ${platformMeta(platform).label} post.
+${platformRules(platform)}
+When the user asks for a change, rewrite the FULL post (not a diff) and return it in "revision.text".`;
+  } else {
+    system += `\n\nYou are helping the user redraft a raw content idea (its title and its notes/angle).
+You may sharpen the title and rewrite the notes into a clearer angle, audience, and hook.
+When you propose a concrete change, return the full rewritten notes in "revision.text" and, if you
+have a sharper title, put it in "revision.title".`;
+  }
+  system += `\n\nCurrent ${kind}:
+<current_title>${title}</current_title>
+<current_text>${text}</current_text>
+
+Reply as STRICT JSON: {"message": string, "revision"?: {"title"?: string, "text"?: string}}.
+- "message": your conversational reply (talk to the user, ask clarifying questions, explain your thinking).
+- Include "revision" ONLY when you are proposing a concrete edit the user can apply. Omit it for pure
+  discussion, questions, or feedback. "text" must be the full replacement text, never a fragment.`;
+
+  const messages: ChatTurn[] = [{ role: "system", content: system }];
+  for (const m of history) {
+    messages.push({ role: m.role, content: m.content });
+  }
+  messages.push({ role: "user", content: userMessage });
+
+  const parsed = parseJson(await chatMessagesQuality(messages, true));
+  const message = String(parsed.message ?? "").trim();
+  let revision: DiscussResult["revision"];
+  const rev = parsed.revision;
+  if (rev && (rev.title || rev.text)) {
+    revision = {};
+    if (rev.title && String(rev.title).trim()) revision.title = String(rev.title).trim();
+    if (rev.text && String(rev.text).trim()) revision.text = String(rev.text).trim();
+    if (!revision.title && !revision.text) revision = undefined;
+  }
+  return { message: message || "(no reply)", revision };
 }
